@@ -1,0 +1,5 @@
+{
+  "name": "Image Color Uniformity Analyzer",
+  "description": "An application to analyze and visualize color uniformity in an uploaded image. It identifies the most dominant color based on a user-defined threshold and highlights it in the image.",
+  "requestFramePermissions": []
+}
