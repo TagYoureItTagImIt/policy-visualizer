@@ -35,7 +35,6 @@ const ColorUniformityAnalyzer: React.FC = () => {
   const sourceVideoRef = useRef<HTMLVideoElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const processingCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
 
   useEffect(() => {
@@ -97,16 +96,6 @@ const ColorUniformityAnalyzer: React.FC = () => {
       if (file.type.startsWith('video/')) {
         const video = document.createElement('video');
         video.preload = 'metadata';
-
-        const captureFirstFrame = () => {
-          const canvas = previewCanvasRef.current;
-          if (canvas) {
-              const ctx = canvas.getContext('2d');
-              ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-          }
-        };
-
-        video.addEventListener('seeked', captureFirstFrame, { once: true });
         
         video.onloadedmetadata = () => {
           if (video.duration > 5) {
@@ -117,8 +106,6 @@ const ColorUniformityAnalyzer: React.FC = () => {
           setMediaType('video');
           setMediaUrl(objectUrl);
           setMediaDimensions({ width: video.videoWidth, height: video.videoHeight });
-          // Seeking to a small positive time can be more reliable than 0 for capturing the first frame.
-          video.currentTime = 0.01;
         };
 
         video.src = objectUrl;
@@ -362,7 +349,6 @@ const ColorUniformityAnalyzer: React.FC = () => {
     setDrawingAreaId(prevId => {
       const newId = prevId === id ? null : id;
       if (newId && mediaType === 'video' && sourceVideoRef.current) {
-        sourceVideoRef.current.currentTime = 0;
         sourceVideoRef.current.pause();
       }
       return newId;
@@ -409,11 +395,11 @@ const ColorUniformityAnalyzer: React.FC = () => {
         originalCanvasRef={originalCanvasRef}
         modifiedCanvasRef={modifiedCanvasRef}
         sourceVideoRef={sourceVideoRef}
-        previewCanvasRef={previewCanvasRef}
         hasResult={!!analysisResult}
         onTimeUpdate={handleTimeUpdate}
         drawingAreaId={drawingAreaId}
         onAreaDrawn={handleAreaDrawn}
+        excludedAreas={excludedAreas}
       />
 
       {mediaType === 'video' && frameByFrameResults && (

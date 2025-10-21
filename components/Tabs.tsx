@@ -5,10 +5,11 @@ interface TabsProps {
   setActiveTab: (tab: string) => void;
 }
 
-const Tabs: React.FC<TabsProps> = ({ activeTab, setActiveTab }) => {
+const Tabs: React.FC = ({ activeTab, setActiveTab }) => {
   const tabs = [
     { id: 'colorUniformity', name: 'Color Uniformity Analyzer' },
     { id: 'motionDetection', name: 'Motion Detection Analyzer' },
+    { id: 'captureAlgorithm', name: 'Capture Algorithm Analyzer' },
   ];
 
   return (

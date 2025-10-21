@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import type { ExcludedArea } from '../types';
 
 interface MediaDisplayProps {
   mediaType: 'image' | 'video' | null;
@@ -7,11 +8,11 @@ interface MediaDisplayProps {
   originalCanvasRef: React.RefObject<HTMLCanvasElement>;
   modifiedCanvasRef: React.RefObject<HTMLCanvasElement>;
   sourceVideoRef: React.RefObject<HTMLVideoElement>;
-  previewCanvasRef: React.RefObject<HTMLCanvasElement>; // For video's first frame
   hasResult: boolean;
   onTimeUpdate: (e: React.SyntheticEvent<HTMLVideoElement, Event>) => void;
   drawingAreaId: number | null;
   onAreaDrawn: (rect: { x: number; y: number; width: number; height: number }) => void;
+  excludedAreas: ExcludedArea[];
 }
 
 const MediaDisplay: React.FC<MediaDisplayProps> = ({
@@ -21,11 +22,11 @@ const MediaDisplay: React.FC<MediaDisplayProps> = ({
   originalCanvasRef,
   modifiedCanvasRef,
   sourceVideoRef,
-  previewCanvasRef,
   hasResult,
   onTimeUpdate,
   drawingAreaId,
   onAreaDrawn,
+  excludedAreas,
 }) => {
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -34,18 +35,26 @@ const MediaDisplay: React.FC<MediaDisplayProps> = ({
 
   useEffect(() => {
     const canvas = drawingCanvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !mediaDimensions) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    canvas.width = mediaDimensions.width;
+    canvas.height = mediaDimensions.height;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw all existing excluded areas
+    ctx.fillStyle = 'rgba(0, 0, 139, 0.5)'; // semi-transparent dark blue
+    excludedAreas.forEach(area => {
+      ctx.fillRect(area.x, area.y, area.width, area.height);
+    });
 
     if (currentRect) {
       ctx.strokeStyle = '#34D399'; // A bright green color
       ctx.lineWidth = 2;
       ctx.strokeRect(currentRect.x, currentRect.y, currentRect.width, currentRect.height);
     }
-  }, [currentRect]);
+  }, [excludedAreas, currentRect, mediaDimensions]);
 
   const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } | null => {
     const canvas = drawingCanvasRef.current;
@@ -98,7 +107,7 @@ const MediaDisplay: React.FC<MediaDisplayProps> = ({
       ref={drawingCanvasRef}
       width={mediaDimensions.width}
       height={mediaDimensions.height}
-      className={`absolute top-0 left-0 max-w-full h-auto ${drawingAreaId ? 'cursor-crosshair z-20' : 'pointer-events-none z-0'}`}
+      className={`absolute top-0 left-0 max-w-full h-auto ${drawingAreaId ? 'cursor-crosshair z-20' : 'pointer-events-none z-10'}`}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -136,32 +145,21 @@ const MediaDisplay: React.FC<MediaDisplayProps> = ({
       {mediaType === 'video' && (
          <>
           <div className="text-center space-y-4">
-            {drawingAreaId !== null && (
-             <div>
-                <h3 className="text-lg font-semibold text-gray-300 mb-2">First Frame (for drawing)</h3>
+            <div>
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">Original Video ({mediaDimensions.width}x{mediaDimensions.height})</h3>
                 <div className="relative inline-block align-top">
-                    <canvas 
-                        ref={previewCanvasRef} 
-                        width={mediaDimensions.width} 
+                    <video
+                        ref={sourceVideoRef}
+                        src={mediaUrl ?? ''}
+                        width={mediaDimensions.width}
                         height={mediaDimensions.height}
                         className="max-w-full h-auto rounded-lg shadow-lg bg-gray-700"
+                        controls
+                        muted
+                        onTimeUpdate={onTimeUpdate}
                     />
                     {drawingCanvas}
                 </div>
-            </div>
-            )}
-            <div>
-                <h3 className="text-lg font-semibold text-gray-300 mb-2">Original Video ({mediaDimensions.width}x{mediaDimensions.height})</h3>
-                <video
-                    ref={sourceVideoRef}
-                    src={mediaUrl ?? ''}
-                    width={mediaDimensions.width}
-                    height={mediaDimensions.height}
-                    className="max-w-full h-auto rounded-lg shadow-lg bg-gray-700"
-                    controls
-                    muted
-                    onTimeUpdate={onTimeUpdate}
-                />
             </div>
           </div>
           <div className={`text-center transition-opacity duration-500 ${hasResult ? 'opacity-100' : 'opacity-0'}`}>

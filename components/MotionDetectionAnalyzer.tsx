@@ -23,14 +23,14 @@ const MotionDetectionAnalyzer: React.FC = () => {
   // State for drawing excluded areas
   const [drawingAreaId, setDrawingAreaId] = useState<number | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [currentRect, setCurrentRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
   // Refs for DOM elements and processing
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null); // Analyzed frame
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null); // First frame for drawing
   const processingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingOverlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawingStartPoint = useRef<{ x: number; y: number } | null>(null);
-  const canvasSnapshot = useRef<ImageData | null>(null);
 
   const resetState = useCallback(() => {
     setError(null);
@@ -64,12 +64,8 @@ const MotionDetectionAnalyzer: React.FC = () => {
 
     const captureFirstFrame = () => {
       const analyzedCanvas = canvasRef.current;
-      const previewCanvas = previewCanvasRef.current;
       if (analyzedCanvas) {
           analyzedCanvas.getContext('2d')?.drawImage(video, 0, 0, analyzedCanvas.width, analyzedCanvas.height);
-      }
-      if (previewCanvas) {
-          previewCanvas.getContext('2d')?.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
       }
     };
 
@@ -293,16 +289,41 @@ const MotionDetectionAnalyzer: React.FC = () => {
   };
 
   const handleDrawExcludedArea = (id: number) => {
-    setDrawingAreaId(prevId => (prevId === id ? null : id));
-    setIsDrawing(false);
+    const isActivating = drawingAreaId !== id;
+    setDrawingAreaId(isActivating ? id : null);
+    if (isActivating && videoRef.current) {
+        videoRef.current.pause();
+    }
   };
+  
+  useEffect(() => {
+    const canvas = drawingOverlayCanvasRef.current;
+    if (!canvas || !videoDimensions) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = videoDimensions.width;
+    canvas.height = videoDimensions.height;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = 'rgba(0, 0, 139, 0.5)';
+    excludedAreas.forEach(area => {
+        ctx.fillRect(area.x, area.y, area.width, area.height);
+    });
+
+    if (currentRect) {
+        ctx.strokeStyle = '#34D399';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(currentRect.x, currentRect.y, currentRect.width, currentRect.height);
+    }
+  }, [excludedAreas, currentRect, videoDimensions]);
 
   const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } | null => {
-    const canvas = previewCanvasRef.current;
-    if (!canvas) return null;
+    const canvas = drawingOverlayCanvasRef.current;
+    if (!canvas || !videoDimensions) return null;
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const scaleX = videoDimensions.width / rect.width;
+    const scaleY = videoDimensions.height / rect.height;
     return {
       x: (e.clientX - rect.left) * scaleX,
       y: (e.clientY - rect.top) * scaleY,
@@ -315,48 +336,37 @@ const MotionDetectionAnalyzer: React.FC = () => {
     if (coords) {
       setIsDrawing(true);
       drawingStartPoint.current = coords;
-      const ctx = previewCanvasRef.current?.getContext('2d');
-      if(ctx && previewCanvasRef.current) {
-        canvasSnapshot.current = ctx.getImageData(0, 0, previewCanvasRef.current.width, previewCanvasRef.current.height);
-      }
     }
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing || !drawingStartPoint.current) return;
     const coords = getCanvasCoordinates(e);
-    const ctx = previewCanvasRef.current?.getContext('2d');
-    if (coords && ctx && canvasSnapshot.current) {
-        ctx.putImageData(canvasSnapshot.current, 0, 0); // Restore snapshot
+    if (coords) {
         const start = drawingStartPoint.current;
-        ctx.strokeStyle = '#34D399';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(start.x, start.y, coords.x - start.x, coords.y - start.y);
+        const x = Math.min(start.x, coords.x);
+        const y = Math.min(start.y, coords.y);
+        const width = Math.abs(start.x - coords.x);
+        const height = Math.abs(start.y - coords.y);
+        setCurrentRect({ x, y, width, height });
     }
   };
 
   const handleCanvasMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !drawingStartPoint.current || !drawingAreaId) return;
-    const coords = getCanvasCoordinates(e);
-    if (coords) {
-      const start = drawingStartPoint.current;
-      const rect = {
-        x: Math.round(Math.min(start.x, coords.x)),
-        y: Math.round(Math.min(start.y, coords.y)),
-        width: Math.round(Math.abs(start.x - coords.x)),
-        height: Math.round(Math.abs(start.y - coords.y)),
-      };
-      setExcludedAreas(prev => prev.map(area => (area.id === drawingAreaId ? { ...area, ...rect } : area)));
-      setDrawingAreaId(null);
-    }
+    if (!isDrawing || !drawingStartPoint.current || !drawingAreaId || !currentRect) return;
+
+    const rect = {
+      x: Math.round(currentRect.x),
+      y: Math.round(currentRect.y),
+      width: Math.round(currentRect.width),
+      height: Math.round(currentRect.height),
+    };
+    setExcludedAreas(prev => prev.map(area => (area.id === drawingAreaId ? { ...area, ...rect } : area)));
+    
+    setDrawingAreaId(null);
     setIsDrawing(false);
     drawingStartPoint.current = null;
-    canvasSnapshot.current = null;
-    
-    if (videoRef.current && previewCanvasRef.current) {
-        const previewCtx = previewCanvasRef.current.getContext('2d');
-        previewCtx?.drawImage(videoRef.current, 0, 0, previewCanvasRef.current.width, previewCanvasRef.current.height);
-    }
+    setCurrentRect(null);
   };
 
 
@@ -450,26 +460,23 @@ const MotionDetectionAnalyzer: React.FC = () => {
       {error && <div className="mt-4 text-center text-red-400 bg-red-900/50 p-3 rounded-lg max-w-4xl mx-auto">{error}</div>}
 
       {videoDimensions && (
-        <div className={`w-full max-w-7xl mx-auto mt-8 grid grid-cols-1 ${drawingAreaId !== null ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-8`}>
+        <div className="w-full max-w-7xl mx-auto mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="text-center">
                 <h3 className="text-lg font-semibold text-gray-300 mb-2">Original Video</h3>
-                <video ref={videoRef} src={videoUrl ?? ''} width={videoDimensions.width} height={videoDimensions.height} className="max-w-full h-auto rounded-lg shadow-lg bg-gray-700" controls muted onTimeUpdate={handleTimeUpdate}/>
+                <div className="relative inline-block align-top">
+                    <video ref={videoRef} src={videoUrl ?? ''} width={videoDimensions.width} height={videoDimensions.height} className="max-w-full h-auto rounded-lg shadow-lg bg-gray-700" controls muted onTimeUpdate={handleTimeUpdate}/>
+                    <canvas 
+                        ref={drawingOverlayCanvasRef} 
+                        width={videoDimensions.width} 
+                        height={videoDimensions.height} 
+                        className={`absolute top-0 left-0 max-w-full h-auto ${drawingAreaId ? 'cursor-crosshair z-20' : 'pointer-events-none z-10'}`}
+                        onMouseDown={handleCanvasMouseDown}
+                        onMouseMove={handleCanvasMouseMove}
+                        onMouseUp={handleCanvasMouseUp}
+                        onMouseLeave={handleCanvasMouseUp}
+                    />
+                </div>
             </div>
-            {drawingAreaId !== null && (
-              <div className="text-center">
-                  <h3 className="text-lg font-semibold text-gray-300 mb-2">First Frame (for drawing)</h3>
-                  <canvas 
-                    ref={previewCanvasRef} 
-                    width={videoDimensions.width} 
-                    height={videoDimensions.height} 
-                    className={`max-w-full h-auto rounded-lg shadow-lg bg-gray-700 ${drawingAreaId ? 'cursor-crosshair' : ''}`}
-                    onMouseDown={handleCanvasMouseDown}
-                    onMouseMove={handleCanvasMouseMove}
-                    onMouseUp={handleCanvasMouseUp}
-                    onMouseLeave={handleCanvasMouseUp}
-                  />
-              </div>
-            )}
             <div className="text-center">
                 <h3 className="text-lg font-semibold text-gray-300 mb-2">Analyzed Frame</h3>
                 <canvas 
