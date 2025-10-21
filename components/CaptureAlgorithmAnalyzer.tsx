@@ -1,5 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
+
+// Make Tesseract.js globally available for TypeScript
+declare const Tesseract: any;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
 
@@ -27,7 +29,8 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
   const processedCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
-  const ocrAbortControllerRef = useRef<AbortController | null>(null);
+  const tesseractWorkerRef = useRef<any | null>(null);
+  const isOcrCancelledRef = useRef<boolean>(false);
   
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
@@ -201,29 +204,18 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
         setOcrError("Please define a valid OCR area first.");
         return;
     }
-
-    const controller = new AbortController();
-    ocrAbortControllerRef.current = controller;
-
+    
     setIsOcrProcessing(true);
     setOcrResult('');
     setOcrError(null);
+    isOcrCancelledRef.current = false;
+    let worker: any = null;
 
     try {
-      const timeoutPromise = new Promise<string>((_, reject) => {
-        const timerId = setTimeout(() => {
-          reject(new Error('OCR operation timed out after 5 seconds.'));
-        }, 5000);
-  
-        controller.signal.addEventListener('abort', () => {
-          clearTimeout(timerId);
-          reject(new Error('aborted'));
-        });
-      });
+        worker = await Tesseract.createWorker('eng');
+        tesseractWorkerRef.current = worker;
 
-      const ocrTask = async (): Promise<string> => {
         const processedCanvas = processedCanvasRef.current;
-        if (!processedCanvas) throw new Error("Processed canvas is not available.");
         const ctx = processedCanvas.getContext('2d');
         if (!ctx) throw new Error("Could not get processed canvas context.");
 
@@ -235,47 +227,35 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
 
         const imageData = ctx.getImageData(ocrArea.x, ocrArea.y, ocrArea.width, ocrArea.height);
         cropCtx.putImageData(imageData, 0, 0);
-        const base64ImageData = cropCanvas.toDataURL('image/jpeg').split(',')[1];
 
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const imagePart = {
-            inlineData: { mimeType: 'image/jpeg', data: base64ImageData },
-        };
-        const textPart = {
-            text: "Extract the text from this image. Only return the text content, without any introductory phrases."
-        };
+        const recognitionPromise = worker.recognize(cropCanvas).then((res: any) => res.data.text);
         
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts: [imagePart, textPart] },
-        });
+        const timeoutPromise = new Promise<string>((_, reject) => 
+            setTimeout(() => reject(new Error('OCR operation timed out after 5 seconds.')), 5000)
+        );
 
-        if (controller.signal.aborted) throw new Error('aborted');
-
-        return response.text;
-      };
-
-      const result = await Promise.race([ocrTask(), timeoutPromise]);
-      setOcrResult(result);
-
+        const result = await Promise.race([recognitionPromise, timeoutPromise]);
+        setOcrResult(result);
     } catch (e: any) {
-      if (e.message === 'aborted') {
-        setOcrError("OCR operation cancelled by user.");
-      } else {
-        setOcrError(`OCR failed: ${e.message}`);
-      }
-      console.error(e);
+        if (!isOcrCancelledRef.current) {
+             setOcrError(`OCR failed: ${e.message}`);
+        }
     } finally {
-      setIsOcrProcessing(false);
-      if (ocrAbortControllerRef.current === controller) {
-        ocrAbortControllerRef.current = null;
-      }
+        if (worker) {
+            await worker.terminate();
+        }
+        tesseractWorkerRef.current = null;
+        setIsOcrProcessing(false);
     }
   };
 
   const handleCancelOcr = () => {
-    if (ocrAbortControllerRef.current) {
-        ocrAbortControllerRef.current.abort();
+    if (tesseractWorkerRef.current) {
+        isOcrCancelledRef.current = true;
+        tesseractWorkerRef.current.terminate();
+        tesseractWorkerRef.current = null;
+        setIsOcrProcessing(false);
+        setOcrError("OCR operation cancelled by user.");
     }
   };
 

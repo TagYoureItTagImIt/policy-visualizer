@@ -5,7 +5,8 @@ interface TabsProps {
   setActiveTab: (tab: string) => void;
 }
 
-const Tabs: React.FC = ({ activeTab, setActiveTab }) => {
+// Fix: Correctly type the functional component with TabsProps to accept props.
+const Tabs: React.FC<TabsProps> = ({ activeTab, setActiveTab }) => {
   const tabs = [
     { id: 'colorUniformity', name: 'Color Uniformity Analyzer' },
     { id: 'motionDetection', name: 'Motion Detection Analyzer' },

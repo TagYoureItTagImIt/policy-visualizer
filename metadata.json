@@ -1,5 +1,5 @@
 {
   "name": "Witbe Policies Visualization Tool",
-  "description": "Upload an image or video visualize policy thresholds for troubleshooting. It highlights uniformity and analyzes video motion.",
+  "description": "Upload an image or video visualize policy thresholds for troubleshooting.",
   "requestFramePermissions": []
 }
