@@ -3,6 +3,7 @@ import Header from './components/Header';
 import Tabs from './components/Tabs';
 import ColorUniformityAnalyzer from './components/ColorUniformityAnalyzer';
 import MotionDetectionAnalyzer from './components/MotionDetectionAnalyzer';
+import CaptureAlgorithmAnalyzer from './components/CaptureAlgorithmAnalyzer';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('colorUniformity');
@@ -15,6 +16,7 @@ const App: React.FC = () => {
         <main className="mt-8">
           {activeTab === 'colorUniformity' && <ColorUniformityAnalyzer />}
           {activeTab === 'motionDetection' && <MotionDetectionAnalyzer />}
+          {activeTab === 'captureAlgorithm' && <CaptureAlgorithmAnalyzer />}
         </main>
       </div>
     </div>
