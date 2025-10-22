@@ -6,6 +6,7 @@ interface ResultsProps {
   result: {
     dominantColor: RGBColor;
     percentage: number;
+    isUniform?: boolean;
   } | null;
 }
 
@@ -36,6 +37,14 @@ const Results: React.FC<ResultsProps> = ({ result }) => {
           <span className="font-medium text-gray-300">Coverage:</span>
           <span className="text-2xl font-bold text-indigo-400">{result.percentage.toFixed(2)}%</span>
         </div>
+        {result.isUniform !== undefined && (
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-gray-300">Uniform:</span>
+            <span className={`text-xl font-bold ${result.isUniform ? 'text-green-400' : 'text-red-400'}`}>
+              {result.isUniform ? 'Yes' : 'No'}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

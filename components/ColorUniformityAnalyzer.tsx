@@ -16,12 +16,14 @@ const ColorUniformityAnalyzer: React.FC = () => {
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
   const [threshold, setThreshold] = useState<number>(30);
+  const [minimumCoverage, setMinimumCoverage] = useState<number>(0.99);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<{
     dominantColor: RGBColor;
     percentage: number;
     time?: number;
+    isUniform: boolean;
   } | null>(null);
   const [mediaDimensions, setMediaDimensions] = useState<{ width: number; height: number } | null>(null);
   const [frameByFrameResults, setFrameByFrameResults] = useState<FrameAnalysisResult[] | null>(null);
@@ -212,7 +214,12 @@ const ColorUniformityAnalyzer: React.FC = () => {
         try {
           const result = analyzeFrame(ctx, originalCanvas.width, originalCanvas.height, excludedAreas);
           if (result) {
-            setAnalysisResult({ dominantColor: result.dominantColor, percentage: result.percentage });
+            const isUniform = result.percentage >= minimumCoverage * 100;
+            setAnalysisResult({ 
+              dominantColor: result.dominantColor, 
+              percentage: result.percentage,
+              isUniform 
+            });
             const modifiedCtx = modifiedCanvasRef.current?.getContext('2d');
             if (modifiedCtx) {
               modifiedCtx.putImageData(result.newImageData, 0, 0);
@@ -279,7 +286,13 @@ const ColorUniformityAnalyzer: React.FC = () => {
         setFrameByFrameResults(results);
         if (results.length > 0) {
             const firstFrame = results[0];
-            setAnalysisResult({ dominantColor: firstFrame.dominantColor, percentage: firstFrame.percentage, time: firstFrame.time });
+            const isUniform = firstFrame.percentage >= minimumCoverage * 100;
+            setAnalysisResult({ 
+              dominantColor: firstFrame.dominantColor, 
+              percentage: firstFrame.percentage, 
+              time: firstFrame.time,
+              isUniform 
+            });
             const modifiedCtx = modifiedCanvasRef.current?.getContext('2d');
             if (modifiedCtx) {
               modifiedCtx.putImageData(firstFrame.newImageData, 0, 0);
@@ -294,7 +307,7 @@ const ColorUniformityAnalyzer: React.FC = () => {
         video.currentTime = 0;
       }
     }
-  }, [mediaType, mediaDimensions, threshold, excludedAreas]);
+  }, [mediaType, mediaDimensions, threshold, excludedAreas, minimumCoverage]);
 
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
     if (!frameByFrameResults || frameByFrameResults.length === 0) return;
@@ -311,7 +324,13 @@ const ColorUniformityAnalyzer: React.FC = () => {
     }
 
     if (frameToDisplay && analysisResult?.time !== frameToDisplay.time) {
-        setAnalysisResult({ dominantColor: frameToDisplay.dominantColor, percentage: frameToDisplay.percentage, time: frameToDisplay.time });
+        const isUniform = frameToDisplay.percentage >= minimumCoverage * 100;
+        setAnalysisResult({ 
+          dominantColor: frameToDisplay.dominantColor, 
+          percentage: frameToDisplay.percentage, 
+          time: frameToDisplay.time,
+          isUniform 
+        });
         const modifiedCtx = modifiedCanvasRef.current?.getContext('2d');
         if (modifiedCtx) {
           modifiedCtx.putImageData(frameToDisplay.newImageData, 0, 0);
@@ -378,8 +397,10 @@ const ColorUniformityAnalyzer: React.FC = () => {
       <Controls 
         onFileChange={handleFileChange}
         onThresholdChange={(e) => setThreshold(Number(e.target.value))}
+        onMinimumCoverageChange={(e) => setMinimumCoverage(Number(e.target.value))}
         onAnalyze={handleAnalyzeClick}
         threshold={threshold}
+        minimumCoverage={minimumCoverage}
         isProcessing={isProcessing}
         processingProgress={processingProgress}
         hasMedia={!!mediaUrl}

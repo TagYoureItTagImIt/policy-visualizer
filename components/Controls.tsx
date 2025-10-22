@@ -4,8 +4,10 @@ import type { ExcludedArea } from '../types';
 interface ControlsProps {
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onThresholdChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onMinimumCoverageChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onAnalyze: () => void;
   threshold: number;
+  minimumCoverage: number;
   isProcessing: boolean;
   processingProgress: { current: number; total: number } | null;
   hasMedia: boolean;
@@ -21,8 +23,10 @@ interface ControlsProps {
 const Controls: React.FC<ControlsProps> = ({
   onFileChange,
   onThresholdChange,
+  onMinimumCoverageChange,
   onAnalyze,
   threshold,
+  minimumCoverage,
   isProcessing,
   processingProgress,
   hasMedia,
@@ -108,7 +112,7 @@ const Controls: React.FC<ControlsProps> = ({
           />
         </div>
         <div>
-          <label htmlFor="threshold" className="block text-sm font-medium text-gray-300 mb-2">2. Color Distance Threshold: {threshold}</label>
+          <label htmlFor="threshold" className="block text-sm font-medium text-gray-300 mb-2">2. Color Distance Threshold (uniformRangeRadius): {threshold}</label>
           <input 
             id="threshold"
             type="range" 
@@ -125,9 +129,29 @@ const Controls: React.FC<ControlsProps> = ({
         </div>
       </div>
 
+      <div className="mt-6">
+        <div className="max-w-md">
+          <label htmlFor="minimum-coverage" className="block text-sm font-medium text-gray-300 mb-2">3. Minimum Coverage (inRangeMinRatio): {(minimumCoverage * 100).toFixed(1)}%</label>
+          <input 
+            id="minimum-coverage"
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.01"
+            value={minimumCoverage} 
+            onChange={onMinimumCoverageChange} 
+            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          />
+          <div className="flex justify-between text-xs text-gray-400 mt-1">
+            <span>0% (any coverage)</span>
+            <span>100% (perfect uniformity)</span>
+          </div>
+        </div>
+      </div>
+
       <div className="mt-6 border-t border-gray-700 pt-6">
         <div className="flex justify-between items-center mb-3">
-          <label className="block text-sm font-medium text-gray-300">3. Excluded Areas (Optional)</label>
+          <label className="block text-sm font-medium text-gray-300">4. Excluded Areas (Optional)</label>
           <button 
             onClick={handleImportJson}
             className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-md transition"
@@ -246,7 +270,7 @@ const Controls: React.FC<ControlsProps> = ({
               </svg>
               {processingProgress ? `Analyzing Frames... (${processingProgress.current}/${processingProgress.total})` : 'Analyzing...'}
             </>
-          ) : '4. Analyze Media'}
+          ) : '5. Analyze Media'}
         </button>
       </div>
     </div>
