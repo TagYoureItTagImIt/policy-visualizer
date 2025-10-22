@@ -4,6 +4,7 @@ import Tabs from './components/Tabs';
 import ColorUniformityAnalyzer from './components/ColorUniformityAnalyzer';
 import MotionDetectionAnalyzer from './components/MotionDetectionAnalyzer';
 import CaptureAlgorithmAnalyzer from './components/CaptureAlgorithmAnalyzer';
+import VideoCropTool from './components/VideoCropTool';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('colorUniformity');
@@ -17,6 +18,7 @@ const App: React.FC = () => {
           {activeTab === 'colorUniformity' && <ColorUniformityAnalyzer />}
           {activeTab === 'motionDetection' && <MotionDetectionAnalyzer />}
           {activeTab === 'captureAlgorithm' && <CaptureAlgorithmAnalyzer />}
+          {activeTab === 'videoCrop' && <VideoCropTool />}
         </main>
       </div>
     </div>

@@ -11,6 +11,7 @@ const Tabs: React.FC<TabsProps> = ({ activeTab, setActiveTab }) => {
     { id: 'colorUniformity', name: 'Color Uniformity Analyzer' },
     { id: 'motionDetection', name: 'Motion Detection Analyzer' },
     { id: 'captureAlgorithm', name: 'Capture Algorithm Analyzer' },
+    { id: 'videoCrop', name: 'Video Crop Tool' },
   ];
 
   return (
