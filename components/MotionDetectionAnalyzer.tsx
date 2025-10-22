@@ -24,6 +24,11 @@ const MotionDetectionAnalyzer: React.FC = () => {
   const [drawingAreaId, setDrawingAreaId] = useState<number | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentRect, setCurrentRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  
+  // State for JSON import modal
+  const [showJsonImport, setShowJsonImport] = useState(false);
+  const [jsonInput, setJsonInput] = useState('');
+  const [jsonError, setJsonError] = useState<string | null>(null);
 
   // Refs for DOM elements and processing
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -377,40 +382,60 @@ const MotionDetectionAnalyzer: React.FC = () => {
     setExcludedAreas(prev => [...prev, ...newAreas]);
   };
 
-  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleImportJson = () => {
+    setShowJsonImport(true);
+    setJsonError(null);
+  };
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const jsonData = JSON.parse(event.target?.result as string);
-        if (Array.isArray(jsonData)) {
-          // Handle array of areas
-          const areas = jsonData.map(area => ({
-            x: area.x || 0,
-            y: area.y || 0,
-            width: area.width || 0,
-            height: area.height || 0
-          }));
-          handleImportExcludedAreas(areas);
-        } else if (jsonData.excludedAreas && Array.isArray(jsonData.excludedAreas)) {
-          // Handle object with excludedAreas property
-          const areas = jsonData.excludedAreas.map((area: any) => ({
-            x: area.x || 0,
-            y: area.y || 0,
-            width: area.width || 0,
-            height: area.height || 0
-          }));
-          handleImportExcludedAreas(areas);
-        } else {
-          setError("Invalid JSON format. Expected array of areas or object with 'excludedAreas' property.");
+  const handleJsonInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setJsonInput(e.target.value);
+    setJsonError(null);
+  };
+
+  const handleSaveJson = () => {
+    try {
+      const parsed = JSON.parse(jsonInput);
+      
+      let areas: Omit<ExcludedArea, 'id'>[];
+      
+      // Handle both array and single object formats
+      if (Array.isArray(parsed)) {
+        areas = parsed.map((item, index) => {
+          if (typeof item !== 'object' || item === null) {
+            throw new Error(`Item at index ${index} is not an object`);
+          }
+          
+          const { x, y, width, height } = item;
+          if (typeof x !== 'number' || typeof y !== 'number' || typeof width !== 'number' || typeof height !== 'number') {
+            throw new Error(`Item at index ${index} must have numeric x, y, width, and height properties`);
+          }
+          
+          return { x, y, width, height };
+        });
+      } else if (typeof parsed === 'object' && parsed !== null) {
+        // Single object format
+        const { x, y, width, height } = parsed;
+        if (typeof x !== 'number' || typeof y !== 'number' || typeof width !== 'number' || typeof height !== 'number') {
+          throw new Error('Object must have numeric x, y, width, and height properties');
         }
-      } catch (error) {
-        setError("Failed to parse JSON file. Please check the format.");
+        areas = [{ x, y, width, height }];
+      } else {
+        throw new Error('JSON must be either an array of objects or a single object');
       }
-    };
-    reader.readAsText(file);
+      
+      handleImportExcludedAreas(areas);
+      setShowJsonImport(false);
+      setJsonInput('');
+      setJsonError(null);
+    } catch (error) {
+      setJsonError(error instanceof Error ? error.message : 'Invalid JSON format');
+    }
+  };
+
+  const handleCancelJson = () => {
+    setShowJsonImport(false);
+    setJsonInput('');
+    setJsonError(null);
   };
 
 
@@ -510,17 +535,64 @@ const MotionDetectionAnalyzer: React.FC = () => {
                   + Add Area
                 </button>
               )}
-              <label htmlFor="json-import" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-md text-sm transition cursor-pointer">
+              <button onClick={handleImportJson} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-md text-sm transition">
                 Import JSON
-              </label>
-              <input 
-                id="json-import" 
-                type="file" 
-                accept=".json" 
-                onChange={handleImportJSON} 
-                className="hidden" 
-              />
+              </button>
             </div>
+            
+            {showJsonImport && (
+              <div className="mt-4 p-4 bg-gray-700 rounded-lg">
+                <label htmlFor="json-input" className="block text-sm font-medium text-gray-300 mb-2">
+                  Paste JSON (array or single object):
+                </label>
+                <textarea
+                  id="json-input"
+                  value={jsonInput}
+                  onChange={handleJsonInputChange}
+                  placeholder='// Array format (multiple areas):
+[
+  {
+    "x": 919,
+    "y": 738,
+    "width": 161,
+    "height": 1476
+  },
+  {
+    "x": 3,
+    "y": 1593,
+    "width": 914,
+    "height": 627
+  }
+]
+
+// Single object format (one area):
+{
+  "x": 919,
+  "y": 738,
+  "width": 161,
+  "height": 1476
+}'
+                  className="w-full h-40 bg-gray-800 text-white rounded-md p-3 text-sm font-mono resize-none"
+                />
+                {jsonError && (
+                  <div className="text-red-400 text-sm mt-2">{jsonError}</div>
+                )}
+                <div className="flex gap-2 mt-3">
+                  <button 
+                    onClick={handleSaveJson}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-md transition"
+                  >
+                    Save
+                  </button>
+                  <button 
+                    onClick={handleCancelJson}
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white text-sm rounded-md transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
         </div>
         <div className="mt-6 text-center border-t border-gray-700 pt-6">
             <button onClick={handleAnalyzeVideoFile} disabled={!videoUrl || isProcessing} className="w-full md:w-auto px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition flex items-center justify-center mx-auto">
