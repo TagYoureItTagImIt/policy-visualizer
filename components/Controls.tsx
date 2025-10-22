@@ -46,16 +46,20 @@ const Controls: React.FC<ControlsProps> = ({
           />
         </div>
         <div>
-          <label htmlFor="threshold" className="block text-sm font-medium text-gray-300 mb-2">2. Color Threshold: {threshold}%</label>
+          <label htmlFor="threshold" className="block text-sm font-medium text-gray-300 mb-2">2. Color Distance Threshold: {threshold}</label>
           <input 
             id="threshold"
             type="range" 
             min="0" 
-            max="100" 
+            max="255" 
             value={threshold} 
             onChange={onThresholdChange} 
             className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
           />
+          <div className="flex justify-between text-xs text-gray-400 mt-1">
+            <span>0 (exact match)</span>
+            <span>255 (any color)</span>
+          </div>
         </div>
       </div>
 

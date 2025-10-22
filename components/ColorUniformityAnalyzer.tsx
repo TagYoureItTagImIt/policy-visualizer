@@ -15,7 +15,7 @@ const colorDistance = (c1: RGBColor, c2: RGBColor): number => {
 const ColorUniformityAnalyzer: React.FC = () => {
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
-  const [threshold, setThreshold] = useState<number>(10);
+  const [threshold, setThreshold] = useState<number>(30);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<{
@@ -143,8 +143,7 @@ const ColorUniformityAnalyzer: React.FC = () => {
     
     let analyzablePixelCount = 0;
     const colorClusters: { representative: RGBColor; count: number }[] = [];
-    const maxDist = Math.sqrt(255 ** 2 * 3);
-    const thresholdDist = (threshold / 100) * maxDist;
+    const thresholdDist = threshold;
 
     for (let i = 0; i < data.length; i += 4) {
       if (data[i + 3] < 128) continue;
