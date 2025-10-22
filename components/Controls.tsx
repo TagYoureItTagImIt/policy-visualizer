@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { ExcludedArea } from '../types';
 
 interface ControlsProps {
@@ -15,6 +15,7 @@ interface ControlsProps {
   onExcludedAreaChange: (id: number, field: keyof Omit<ExcludedArea, 'id'>, value: number) => void;
   onDrawExcludedArea: (id: number) => void;
   drawingAreaId: number | null;
+  onImportExcludedAreas: (areas: Omit<ExcludedArea, 'id'>[]) => void;
 }
 
 const Controls: React.FC<ControlsProps> = ({
@@ -31,12 +32,73 @@ const Controls: React.FC<ControlsProps> = ({
   onExcludedAreaChange,
   onDrawExcludedArea,
   drawingAreaId,
+  onImportExcludedAreas,
 }) => {
+  const [showJsonImport, setShowJsonImport] = useState(false);
+  const [jsonInput, setJsonInput] = useState('');
+  const [jsonError, setJsonError] = useState<string | null>(null);
+
+  const handleImportJson = () => {
+    setShowJsonImport(true);
+    setJsonError(null);
+  };
+
+  const handleJsonInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setJsonInput(e.target.value);
+    setJsonError(null);
+  };
+
+  const handleSaveJson = () => {
+    try {
+      const parsed = JSON.parse(jsonInput);
+      
+      let areas: Omit<ExcludedArea, 'id'>[];
+      
+      // Handle both array and single object formats
+      if (Array.isArray(parsed)) {
+        areas = parsed.map((item, index) => {
+          if (typeof item !== 'object' || item === null) {
+            throw new Error(`Item at index ${index} is not an object`);
+          }
+          
+          const { x, y, width, height } = item;
+          if (typeof x !== 'number' || typeof y !== 'number' || typeof width !== 'number' || typeof height !== 'number') {
+            throw new Error(`Item at index ${index} must have numeric x, y, width, and height properties`);
+          }
+          
+          return { x, y, width, height };
+        });
+      } else if (typeof parsed === 'object' && parsed !== null) {
+        // Single object format
+        const { x, y, width, height } = parsed;
+        if (typeof x !== 'number' || typeof y !== 'number' || typeof width !== 'number' || typeof height !== 'number') {
+          throw new Error('Object must have numeric x, y, width, and height properties');
+        }
+        areas = [{ x, y, width, height }];
+      } else {
+        throw new Error('JSON must be either an array of objects or a single object');
+      }
+      
+      onImportExcludedAreas(areas);
+      setShowJsonImport(false);
+      setJsonInput('');
+      setJsonError(null);
+    } catch (error) {
+      setJsonError(error instanceof Error ? error.message : 'Invalid JSON format');
+    }
+  };
+
+  const handleCancelJson = () => {
+    setShowJsonImport(false);
+    setJsonInput('');
+    setJsonError(null);
+  };
+
   return (
     <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-2xl mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
         <div>
-          <label htmlFor="file-upload" className="block text-sm font-medium text-gray-300 mb-2">1. Upload Media (Image or Video &lt; 5s)</label>
+          <label htmlFor="file-upload" className="block text-sm font-medium text-gray-300 mb-2">1. Upload Media (Image or Video &lt; 15s)</label>
           <input 
             id="file-upload"
             type="file" 
@@ -64,7 +126,70 @@ const Controls: React.FC<ControlsProps> = ({
       </div>
 
       <div className="mt-6 border-t border-gray-700 pt-6">
-        <label className="block text-sm font-medium text-gray-300 mb-3">3. Excluded Areas (Optional)</label>
+        <div className="flex justify-between items-center mb-3">
+          <label className="block text-sm font-medium text-gray-300">3. Excluded Areas (Optional)</label>
+          <button 
+            onClick={handleImportJson}
+            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-md transition"
+          >
+            Import JSON
+          </button>
+        </div>
+        
+        {showJsonImport && (
+          <div className="mb-4 p-4 bg-gray-700 rounded-lg">
+            <label htmlFor="json-input" className="block text-sm font-medium text-gray-300 mb-2">
+              Paste JSON (array or single object):
+            </label>
+            <textarea
+              id="json-input"
+              value={jsonInput}
+              onChange={handleJsonInputChange}
+              placeholder='// Array format (multiple areas):
+[
+  {
+    "x": 919,
+    "y": 738,
+    "width": 161,
+    "height": 1476
+  },
+  {
+    "x": 3,
+    "y": 1593,
+    "width": 914,
+    "height": 627
+  }
+]
+
+// Single object format (one area):
+{
+  "x": 919,
+  "y": 738,
+  "width": 161,
+  "height": 1476
+}'
+              className="w-full h-40 bg-gray-800 text-white rounded-md p-3 text-sm font-mono resize-none"
+            />
+            {jsonError && (
+              <div className="text-red-400 text-sm mt-2">{jsonError}</div>
+            )}
+            <div className="flex gap-2 mt-3">
+              <button 
+                onClick={handleSaveJson}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-md transition"
+              >
+                Save
+              </button>
+              <button 
+                onClick={handleCancelJson}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white text-sm rounded-md transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        
         <div className="space-y-4">
           {excludedAreas.map((area) => (
             <div key={area.id} className="grid grid-cols-1 sm:grid-cols-6 gap-3 items-end">

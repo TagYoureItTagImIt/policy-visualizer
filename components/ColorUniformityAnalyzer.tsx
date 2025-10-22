@@ -98,8 +98,8 @@ const ColorUniformityAnalyzer: React.FC = () => {
         video.preload = 'metadata';
         
         video.onloadedmetadata = () => {
-          if (video.duration > 5) {
-            setError("Video is too long. Please select a video 5 seconds or shorter.");
+          if (video.duration > 15) {
+            setError("Video is too long. Please select a video 15 seconds or shorter.");
             URL.revokeObjectURL(objectUrl);
             return;
           }
@@ -364,6 +364,14 @@ const ColorUniformityAnalyzer: React.FC = () => {
     setDrawingAreaId(null);
   };
 
+  const handleImportExcludedAreas = (areas: Omit<ExcludedArea, 'id'>[]) => {
+    const newAreas = areas.map(area => ({
+      ...area,
+      id: Date.now() + Math.random() // Generate unique IDs
+    }));
+    setExcludedAreas(prev => [...prev, ...newAreas]);
+  };
+
 
   return (
     <>
@@ -381,6 +389,7 @@ const ColorUniformityAnalyzer: React.FC = () => {
         onExcludedAreaChange={handleExcludedAreaChange}
         drawingAreaId={drawingAreaId}
         onDrawExcludedArea={handleDrawExcludedArea}
+        onImportExcludedAreas={handleImportExcludedAreas}
       />
       
       {error && <div className="mt-4 text-center text-red-400 bg-red-900/50 p-3 rounded-lg max-w-2xl mx-auto">{error}</div>}
