@@ -1,5 +1,4 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import MediaDisplay from './ImageDisplay';
 
 interface CropArea {
   x: number;
@@ -13,16 +12,24 @@ interface TargetDimensions {
   height: number;
 }
 
+interface CropBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 const VideoCropTool: React.FC = () => {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
-  const [targetDimensions, setTargetDimensions] = useState<TargetDimensions>({ width: 1920, height: 1080 });
-  const [cropArea, setCropArea] = useState<CropArea | null>(null);
+  const [targetDimensions, setTargetDimensions] = useState<TargetDimensions>({ width: 1080, height: 2340 });
+  const [cropBox, setCropBox] = useState<CropBox | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
-  const [isDrawing, setIsDrawing] = useState<boolean>(false);
-  const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [isCustom, setIsCustom] = useState<boolean>(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -36,19 +43,31 @@ const VideoCropTool: React.FC = () => {
   }, [videoUrl, processedVideoUrl]);
 
   useEffect(() => {
-    drawCropOverlay();
-  }, [drawCropOverlay]);
+    if (videoRef.current && canvasRef.current) {
+      drawCropOverlay();
+    }
+  }, [cropBox, videoDimensions]);
+
+  // Initialize crop box when video dimensions are loaded
+  useEffect(() => {
+    if (videoDimensions && !cropBox) {
+      const newCropBox = calculateCropBox(videoDimensions, targetDimensions);
+      setCropBox(newCropBox);
+    }
+  }, [videoDimensions, targetDimensions, cropBox]);
 
   useEffect(() => {
     if (videoRef.current) {
       const video = videoRef.current;
       const handleTimeUpdate = () => {
-        drawCropOverlay();
+        if (canvasRef.current) {
+          drawCropOverlay();
+        }
       };
       video.addEventListener('timeupdate', handleTimeUpdate);
       return () => video.removeEventListener('timeupdate', handleTimeUpdate);
     }
-  }, [drawCropOverlay]);
+  }, [cropBox, videoDimensions]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -58,7 +77,7 @@ const VideoCropTool: React.FC = () => {
         if (prev) URL.revokeObjectURL(prev);
         return null;
       });
-      setCropArea(null);
+      setCropBox(null);
       
       const objectUrl = URL.createObjectURL(file);
       setVideoUrl(objectUrl);
@@ -80,47 +99,107 @@ const VideoCropTool: React.FC = () => {
   };
 
   const handleTargetDimensionsChange = (field: keyof TargetDimensions, value: number) => {
-    setTargetDimensions(prev => ({ ...prev, [field]: value }));
+    setTargetDimensions(prev => {
+      const newDimensions = { ...prev, [field]: value };
+      // Recalculate crop box with new dimensions
+      if (videoDimensions && cropBox) {
+        const newCropBox = calculateCropBox(videoDimensions, newDimensions);
+        setCropBox(newCropBox);
+      }
+      return newDimensions;
+    });
+  };
+
+  const calculateCropBox = (videoDims: { width: number; height: number }, targetDims: TargetDimensions): CropBox => {
+    const videoAspectRatio = videoDims.width / videoDims.height;
+    const targetAspectRatio = targetDims.width / targetDims.height;
+    
+    let cropWidth, cropHeight;
+    
+    if (videoAspectRatio > targetAspectRatio) {
+      // Video is wider than target, crop width
+      cropHeight = videoDims.height;
+      cropWidth = cropHeight * targetAspectRatio;
+    } else {
+      // Video is taller than target, crop height
+      cropWidth = videoDims.width;
+      cropHeight = cropWidth / targetAspectRatio;
+    }
+    
+    return {
+      x: (videoDims.width - cropWidth) / 2,
+      y: (videoDims.height - cropHeight) / 2,
+      width: cropWidth,
+      height: cropHeight
+    };
+  };
+
+  const handlePresetSelect = (width: number, height: number) => {
+    setTargetDimensions({ width, height });
+    setIsCustom(false);
+    if (videoDimensions) {
+      const newCropBox = calculateCropBox(videoDimensions, { width, height });
+      setCropBox(newCropBox);
+    }
+  };
+
+  const handleCustomToggle = () => {
+    setIsCustom(!isCustom);
+    if (!isCustom) {
+      // Switching to custom, keep current dimensions
+    } else {
+      // Switching from custom, reset to default preset
+      handlePresetSelect(1080, 2340);
+    }
   };
 
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!videoDimensions) return;
+    if (!videoDimensions || !cropBox) return;
     
     const canvas = e.currentTarget;
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
-    setIsDrawing(true);
-    setStartPoint({ x, y });
+    // Check if click is inside the crop box
+    if (x >= cropBox.x && x <= cropBox.x + cropBox.width &&
+        y >= cropBox.y && y <= cropBox.y + cropBox.height) {
+      setIsDragging(true);
+      setDragStart({ x: x - cropBox.x, y: y - cropBox.y });
+    }
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !startPoint || !videoDimensions) return;
+    if (!isDragging || !dragStart || !videoDimensions || !cropBox) return;
     
     const canvas = e.currentTarget;
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
-    const newCropArea = {
-      x: Math.min(startPoint.x, x),
-      y: Math.min(startPoint.y, y),
-      width: Math.abs(x - startPoint.x),
-      height: Math.abs(y - startPoint.y)
-    };
+    const newX = x - dragStart.x;
+    const newY = y - dragStart.y;
     
-    setCropArea(newCropArea);
+    // Keep crop box within video bounds
+    const constrainedX = Math.max(0, Math.min(newX, videoDimensions.width - cropBox.width));
+    const constrainedY = Math.max(0, Math.min(newY, videoDimensions.height - cropBox.height));
+    
+    setCropBox({
+      ...cropBox,
+      x: constrainedX,
+      y: constrainedY
+    });
   };
 
   const handleCanvasMouseUp = () => {
-    setIsDrawing(false);
-    setStartPoint(null);
+    setIsDragging(false);
+    setDragStart(null);
   };
 
   const drawCropOverlay = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !videoDimensions) return;
+    const video = videoRef.current;
+    if (!canvas || !video || !videoDimensions) return;
     
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -129,44 +208,40 @@ const VideoCropTool: React.FC = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Draw video frame
-    if (videoRef.current) {
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    if (cropArea) {
-      // Draw semi-transparent overlay
+    if (cropBox) {
+      // Draw semi-transparent overlay outside crop area
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       
       // Clear the crop area to show original video
-      ctx.clearRect(cropArea.x, cropArea.y, cropArea.width, cropArea.height);
+      ctx.clearRect(cropBox.x, cropBox.y, cropBox.width, cropBox.height);
       
       // Redraw the video frame in the crop area
-      if (videoRef.current) {
-        ctx.drawImage(
-          videoRef.current,
-          cropArea.x, cropArea.y, cropArea.width, cropArea.height,
-          cropArea.x, cropArea.y, cropArea.width, cropArea.height
-        );
-      }
+      ctx.drawImage(
+        video,
+        cropBox.x, cropBox.y, cropBox.width, cropBox.height,
+        cropBox.x, cropBox.y, cropBox.width, cropBox.height
+      );
       
       // Draw crop border
       ctx.strokeStyle = '#3b82f6';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(cropArea.x, cropArea.y, cropArea.width, cropArea.height);
+      ctx.lineWidth = 3;
+      ctx.strokeRect(cropBox.x, cropBox.y, cropBox.width, cropBox.height);
       
       // Draw corner handles
-      const handleSize = 8;
+      const handleSize = 12;
       ctx.fillStyle = '#3b82f6';
-      ctx.fillRect(cropArea.x - handleSize/2, cropArea.y - handleSize/2, handleSize, handleSize);
-      ctx.fillRect(cropArea.x + cropArea.width - handleSize/2, cropArea.y - handleSize/2, handleSize, handleSize);
-      ctx.fillRect(cropArea.x - handleSize/2, cropArea.y + cropArea.height - handleSize/2, handleSize, handleSize);
-      ctx.fillRect(cropArea.x + cropArea.width - handleSize/2, cropArea.y + cropArea.height - handleSize/2, handleSize, handleSize);
+      ctx.fillRect(cropBox.x - handleSize/2, cropBox.y - handleSize/2, handleSize, handleSize);
+      ctx.fillRect(cropBox.x + cropBox.width - handleSize/2, cropBox.y - handleSize/2, handleSize, handleSize);
+      ctx.fillRect(cropBox.x - handleSize/2, cropBox.y + cropBox.height - handleSize/2, handleSize, handleSize);
+      ctx.fillRect(cropBox.x + cropBox.width - handleSize/2, cropBox.y + cropBox.height - handleSize/2, handleSize, handleSize);
     }
-  }, [cropArea, videoDimensions]);
+  }, [cropBox, videoDimensions]);
 
   const processVideo = useCallback(async () => {
-    if (!videoUrl || !cropArea || !videoDimensions) return;
+    if (!videoUrl || !cropBox || !videoDimensions) return;
     
     setIsProcessing(true);
     setError(null);
@@ -216,7 +291,7 @@ const VideoCropTool: React.FC = () => {
         // Draw the cropped and scaled frame
         ctx.drawImage(
           video,
-          cropArea.x, cropArea.y, cropArea.width, cropArea.height,
+          cropBox.x, cropBox.y, cropBox.width, cropBox.height,
           0, 0, targetDimensions.width, targetDimensions.height
         );
         
@@ -241,7 +316,7 @@ const VideoCropTool: React.FC = () => {
       setError('Error processing video: ' + (error instanceof Error ? error.message : 'Unknown error'));
       setIsProcessing(false);
     }
-  }, [videoUrl, cropArea, videoDimensions, targetDimensions]);
+  }, [videoUrl, cropBox, videoDimensions, targetDimensions]);
 
   const downloadVideo = () => {
     if (!processedVideoUrl) return;
@@ -280,70 +355,76 @@ const VideoCropTool: React.FC = () => {
         <>
           {/* Target Dimensions */}
           <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-2xl mx-auto">
-            <h3 className="text-lg font-medium text-gray-300 mb-4">Target Dimensions</h3>
+            <h3 className="text-lg font-medium text-gray-300 mb-4">Target Dimensions (Vertical Only)</h3>
             
             {/* Preset buttons */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-400 mb-2">Quick Presets:</label>
+              <label className="block text-sm font-medium text-gray-400 mb-2">Vertical Presets:</label>
               <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={() => setTargetDimensions({ width: 1920, height: 1080 })}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition"
+                  onClick={() => handlePresetSelect(1206, 2622)}
+                  className={`px-3 py-1 text-sm rounded transition ${
+                    targetDimensions.width === 1206 && targetDimensions.height === 2622 && !isCustom
+                      ? 'bg-green-600 text-white' 
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
                 >
-                  1920×1080 (HD)
+                  1206×2622
                 </button>
                 <button
-                  onClick={() => setTargetDimensions({ width: 1280, height: 720 })}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition"
+                  onClick={() => handlePresetSelect(1080, 2340)}
+                  className={`px-3 py-1 text-sm rounded transition ${
+                    targetDimensions.width === 1080 && targetDimensions.height === 2340 && !isCustom
+                      ? 'bg-green-600 text-white' 
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
                 >
-                  1280×720 (HD)
+                  1080×2340
                 </button>
                 <button
-                  onClick={() => setTargetDimensions({ width: 3840, height: 2160 })}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition"
+                  onClick={handleCustomToggle}
+                  className={`px-3 py-1 text-sm rounded transition ${
+                    isCustom
+                      ? 'bg-green-600 text-white' 
+                      : 'bg-gray-600 hover:bg-gray-700 text-white'
+                  }`}
                 >
-                  3840×2160 (4K)
-                </button>
-                <button
-                  onClick={() => setTargetDimensions({ width: 1080, height: 1080 })}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition"
-                >
-                  1080×1080 (Square)
-                </button>
-                <button
-                  onClick={() => setTargetDimensions({ width: 1080, height: 1920 })}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition"
-                >
-                  1080×1920 (Vertical)
+                  Custom
                 </button>
               </div>
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="target-width" className="block text-sm font-medium text-gray-400 mb-1">
-                  Width
-                </label>
-                <input
-                  id="target-width"
-                  type="number"
-                  value={targetDimensions.width}
-                  onChange={(e) => handleTargetDimensionsChange('width', parseInt(e.target.value) || 0)}
-                  className="w-full bg-gray-700 text-white rounded-md p-2 text-sm"
-                />
+            {isCustom && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="target-width" className="block text-sm font-medium text-gray-400 mb-1">
+                    Width
+                  </label>
+                  <input
+                    id="target-width"
+                    type="number"
+                    value={targetDimensions.width}
+                    onChange={(e) => handleTargetDimensionsChange('width', parseInt(e.target.value) || 0)}
+                    className="w-full bg-gray-700 text-white rounded-md p-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="target-height" className="block text-sm font-medium text-gray-400 mb-1">
+                    Height
+                  </label>
+                  <input
+                    id="target-height"
+                    type="number"
+                    value={targetDimensions.height}
+                    onChange={(e) => handleTargetDimensionsChange('height', parseInt(e.target.value) || 0)}
+                    className="w-full bg-gray-700 text-white rounded-md p-2 text-sm"
+                  />
+                </div>
               </div>
-              <div>
-                <label htmlFor="target-height" className="block text-sm font-medium text-gray-400 mb-1">
-                  Height
-                </label>
-                <input
-                  id="target-height"
-                  type="number"
-                  value={targetDimensions.height}
-                  onChange={(e) => handleTargetDimensionsChange('height', parseInt(e.target.value) || 0)}
-                  className="w-full bg-gray-700 text-white rounded-md p-2 text-sm"
-                />
-              </div>
+            )}
+            
+            <div className="mt-4 text-sm text-gray-400">
+              Current: {targetDimensions.width} × {targetDimensions.height}
             </div>
           </div>
 
@@ -357,11 +438,18 @@ const VideoCropTool: React.FC = () => {
                 className="max-w-full h-auto"
                 style={{ maxHeight: '400px' }}
                 controls
+                onLoadedMetadata={() => {
+                  if (videoRef.current && canvasRef.current) {
+                    const video = videoRef.current;
+                    const canvas = canvasRef.current;
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    drawCropOverlay();
+                  }
+                }}
               />
               <canvas
                 ref={canvasRef}
-                width={videoDimensions.width}
-                height={videoDimensions.height}
                 className="absolute top-0 left-0 cursor-crosshair"
                 style={{ 
                   width: '100%', 
@@ -374,9 +462,11 @@ const VideoCropTool: React.FC = () => {
                 onMouseLeave={handleCanvasMouseUp}
               />
             </div>
-            {cropArea && (
+            {cropBox && (
               <div className="mt-4 text-sm text-gray-400">
-                Crop Area: {Math.round(cropArea.x)}, {Math.round(cropArea.y)} - {Math.round(cropArea.width)} × {Math.round(cropArea.height)}
+                Crop Box: {Math.round(cropBox.x)}, {Math.round(cropBox.y)} - {Math.round(cropBox.width)} × {Math.round(cropBox.height)}
+                <br />
+                <span className="text-blue-400">Drag the blue box to reposition the crop area</span>
               </div>
             )}
           </div>
@@ -385,7 +475,7 @@ const VideoCropTool: React.FC = () => {
           <div className="text-center">
             <button
               onClick={processVideo}
-              disabled={!cropArea || isProcessing}
+              disabled={!cropBox || isProcessing}
               className="px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-300 ease-in-out"
             >
               {isProcessing ? 'Processing...' : 'Process Video'}
