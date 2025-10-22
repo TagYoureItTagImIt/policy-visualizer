@@ -369,6 +369,50 @@ const MotionDetectionAnalyzer: React.FC = () => {
     setCurrentRect(null);
   };
 
+  const handleImportExcludedAreas = (areas: Omit<ExcludedArea, 'id'>[]) => {
+    const newAreas = areas.map(area => ({
+      ...area,
+      id: Date.now() + Math.random() // Generate unique IDs
+    }));
+    setExcludedAreas(prev => [...prev, ...newAreas]);
+  };
+
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const jsonData = JSON.parse(event.target?.result as string);
+        if (Array.isArray(jsonData)) {
+          // Handle array of areas
+          const areas = jsonData.map(area => ({
+            x: area.x || 0,
+            y: area.y || 0,
+            width: area.width || 0,
+            height: area.height || 0
+          }));
+          handleImportExcludedAreas(areas);
+        } else if (jsonData.excludedAreas && Array.isArray(jsonData.excludedAreas)) {
+          // Handle object with excludedAreas property
+          const areas = jsonData.excludedAreas.map((area: any) => ({
+            x: area.x || 0,
+            y: area.y || 0,
+            width: area.width || 0,
+            height: area.height || 0
+          }));
+          handleImportExcludedAreas(areas);
+        } else {
+          setError("Invalid JSON format. Expected array of areas or object with 'excludedAreas' property.");
+        }
+      } catch (error) {
+        setError("Failed to parse JSON file. Please check the format.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
 
   return (
     <div>
@@ -390,14 +434,35 @@ const MotionDetectionAnalyzer: React.FC = () => {
               <div>
                 <label htmlFor="edge-threshold" className="block text-xs font-medium text-gray-400 mb-1">Edge Threshold: {edgeThreshold}</label>
                 <input id="edge-threshold" type="range" min="0" max="255" value={edgeThreshold} onChange={e => setEdgeThreshold(Number(e.target.value))} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>0 (detect all edges)</span>
+                  <span>255 (detect only strong edges)</span>
+                </div>
               </div>
               <div>
                 <label htmlFor="comparison-points" className="block text-xs font-medium text-gray-400 mb-1">Comparison Points: {comparisonPoints}</label>
                 <input id="comparison-points" type="range" min="50" max="1000" step="50" value={comparisonPoints} onChange={e => setComparisonPoints(Number(e.target.value))} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>50 (faster analysis)</span>
+                  <span>1000 (more accurate analysis)</span>
+                </div>
               </div>
               <div>
                 <label htmlFor="tolerance" className="block text-xs font-medium text-gray-400 mb-1">Motion Tolerance: {tolerance}</label>
                 <input id="tolerance" type="range" min="0" max="1" step="0.01" value={tolerance} onChange={e => setTolerance(Number(e.target.value))} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>0 (very sensitive to motion)</span>
+                  <span>1 (only major motion detected)</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 p-3 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+              <h4 className="text-sm font-medium text-blue-300 mb-2">How to Use These Settings:</h4>
+              <div className="text-xs text-blue-200 space-y-1">
+                <p><strong>Edge Threshold:</strong> Lower values (0-50) for subtle motion, higher values (150-255) for obvious movement only</p>
+                <p><strong>Comparison Points:</strong> Lower values (50-200) for quick analysis, higher values (500-1000) for detailed accuracy</p>
+                <p><strong>Motion Tolerance:</strong> Lower values (0-0.3) to catch small movements, higher values (0.7-1.0) to ignore minor changes</p>
+                <p className="text-blue-300 mt-2"><strong>Tip:</strong> Start with default values, then adjust based on your video's motion characteristics</p>
               </div>
             </div>
           </div>
@@ -439,11 +504,23 @@ const MotionDetectionAnalyzer: React.FC = () => {
                 </div>
               ))}
             </div>
-            {excludedAreas.length < 5 && (
-              <button onClick={handleAddExcludedArea} className="mt-3 w-full sm:w-auto px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold rounded-md text-sm transition">
-                + Add Area
-              </button>
-            )}
+            <div className="flex gap-3 mt-3">
+              {excludedAreas.length < 5 && (
+                <button onClick={handleAddExcludedArea} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold rounded-md text-sm transition">
+                  + Add Area
+                </button>
+              )}
+              <label htmlFor="json-import" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-md text-sm transition cursor-pointer">
+                Import JSON
+              </label>
+              <input 
+                id="json-import" 
+                type="file" 
+                accept=".json" 
+                onChange={handleImportJSON} 
+                className="hidden" 
+              />
+            </div>
         </div>
         <div className="mt-6 text-center border-t border-gray-700 pt-6">
             <button onClick={handleAnalyzeVideoFile} disabled={!videoUrl || isProcessing} className="w-full md:w-auto px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition flex items-center justify-center mx-auto">
