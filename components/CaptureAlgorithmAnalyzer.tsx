@@ -26,7 +26,7 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
   const [hasProcessed, setHasProcessed] = useState<boolean>(false);
   
   // Tab state
-  const [activeTab, setActiveTab] = useState<'ocr' | 'mean-color'>('ocr');
+  const [activeTab, setActiveTab] = useState<'ocr' | 'mean-color' | 'grid-check'>('ocr');
   
   // Mean Color Comparison state
   const [referenceImageUrl, setReferenceImageUrl] = useState<string | null>(null);
@@ -45,6 +45,21 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
     range255Difference: number | null;
   } | null>(null);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
+
+  // Grid Check state
+  const [gridWidth, setGridWidth] = useState<number>(3);
+  const [gridHeight, setGridHeight] = useState<number>(3);
+  const [gridResult, setGridResult] = useState<{
+    boxes: Array<{
+      row: number;
+      col: number;
+      referenceColor: { r: number; g: number; b: number };
+      testColor: { r: number; g: number; b: number };
+      percentageDifference: number;
+      range255Difference: number;
+    }>;
+  } | null>(null);
+  const [isCalculatingGrid, setIsCalculatingGrid] = useState<boolean>(false);
 
   const originalCanvasRef = useRef<HTMLCanvasElement>(null);
   const processedCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -565,6 +580,87 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
     return { percentage, range255 };
   };
 
+  const calculateGridMeanColors = (canvas: HTMLCanvasElement, imageDimensions: { width: number, height: number }, gridW: number, gridH: number): Array<{
+    row: number;
+    col: number;
+    referenceColor: { r: number; g: number; b: number };
+    testColor: { r: number; g: number; b: number };
+    percentageDifference: number;
+    range255Difference: number;
+  }> => {
+    const results = [];
+    const boxWidth = imageDimensions.width / gridW;
+    const boxHeight = imageDimensions.height / gridH;
+    
+    for (let row = 0; row < gridH; row++) {
+      for (let col = 0; col < gridW; col++) {
+        const x = col * boxWidth;
+        const y = row * boxHeight;
+        const area = { x, y, width: boxWidth, height: boxHeight };
+        
+        const referenceColor = calculateMeanColor(canvas, area, imageDimensions);
+        
+        results.push({
+          row,
+          col,
+          referenceColor,
+          testColor: { r: 0, g: 0, b: 0 }, // Will be filled when comparing with test image
+          percentageDifference: 0,
+          range255Difference: 0
+        });
+      }
+    }
+    
+    return results;
+  };
+
+  const handleCalculateGridCheck = async () => {
+    if (!referenceCanvasRef.current || !testCanvasRef.current) {
+      setError("Please load both reference and test images.");
+      return;
+    }
+
+    setIsCalculatingGrid(true);
+    setError(null);
+
+    try {
+      // Calculate reference grid colors
+      const referenceResults = calculateGridMeanColors(
+        referenceCanvasRef.current, 
+        referenceImageDimensions!, 
+        gridWidth, 
+        gridHeight
+      );
+
+      // Calculate test grid colors
+      const testResults = calculateGridMeanColors(
+        testCanvasRef.current, 
+        testImageDimensions!, 
+        gridWidth, 
+        gridHeight
+      );
+
+      // Compare each grid box
+      const comparisonResults = referenceResults.map((refBox, index) => {
+        const testBox = testResults[index];
+        const colorDiff = calculateColorDifference(refBox.referenceColor, testBox.referenceColor);
+        
+        return {
+          ...refBox,
+          testColor: testBox.referenceColor,
+          percentageDifference: colorDiff.percentage,
+          range255Difference: colorDiff.range255
+        };
+      });
+
+      setGridResult({ boxes: comparisonResults });
+    } catch (error) {
+      setError('Error calculating grid check: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsCalculatingGrid(false);
+    }
+  };
+
   const handleCalculateMeanColor = async () => {
     if (!referenceCanvasRef.current || !testCanvasRef.current) {
       setError("Please load both reference and test images.");
@@ -736,6 +832,16 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
             }`}
           >
             Mean Color Comparison
+          </button>
+          <button
+            onClick={() => setActiveTab('grid-check')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'grid-check'
+                ? 'border-indigo-500 text-indigo-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            Grid Check
           </button>
         </div>
         
@@ -1250,6 +1356,179 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Grid Check Tab Content */}
+      {activeTab === 'grid-check' && (
+        <div>
+          <div className="mb-6 p-4 bg-green-900/20 border border-green-700/30 rounded-lg">
+            <h4 className="text-sm font-medium text-green-300 mb-2">Grid Check Tool</h4>
+            <p className="text-xs text-green-200">
+              Use this tool to compare mean color differences across a grid of boxes between two images. 
+              Set the grid dimensions and analyze color differences for each grid cell individually.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-3">Reference Image</label>
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={handleReferenceFileChange} 
+                className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-500 file:text-white hover:file:bg-indigo-600 transition"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-3">Test Image</label>
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={handleTestFileChange} 
+                className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-500 file:text-white hover:file:bg-indigo-600 transition"
+              />
+            </div>
+          </div>
+
+          {/* Grid Size Controls */}
+          <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-2xl mx-auto mb-6">
+            <h3 className="text-lg font-medium text-gray-300 mb-4">Grid Size</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="grid-width" className="block text-sm font-medium text-gray-400 mb-1">
+                  Grid Width (1-20)
+                </label>
+                <input
+                  id="grid-width"
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={gridWidth}
+                  onChange={(e) => setGridWidth(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+                  className="w-full bg-gray-700 text-white rounded-md p-2 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="grid-height" className="block text-sm font-medium text-gray-400 mb-1">
+                  Grid Height (1-20)
+                </label>
+                <input
+                  id="grid-height"
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={gridHeight}
+                  onChange={(e) => setGridHeight(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+                  className="w-full bg-gray-700 text-white rounded-md p-2 text-sm"
+                />
+              </div>
+            </div>
+            <div className="mt-4 text-sm text-gray-400">
+              Grid: {gridWidth} × {gridHeight} = {gridWidth * gridHeight} boxes
+            </div>
+          </div>
+
+          {/* Calculate Button */}
+          {referenceImageDimensions && testImageDimensions && (
+            <div className="text-center mb-6">
+              <button
+                onClick={handleCalculateGridCheck}
+                disabled={isCalculatingGrid}
+                className="px-8 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-300 ease-in-out"
+              >
+                {isCalculatingGrid ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Calculating...
+                  </>
+                ) : 'Calculate Grid Check'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Grid Check Image Display */}
+      {activeTab === 'grid-check' && (referenceImageDimensions || testImageDimensions) && (
+        <div className="w-full max-w-7xl mx-auto mt-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {referenceImageDimensions && (
+              <div className="text-center">
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">Reference Image ({referenceImageDimensions.width}x{referenceImageDimensions.height})</h3>
+                <div className="relative inline-block align-top">
+                  <canvas 
+                    ref={referenceCanvasRef} 
+                    className="max-w-full h-auto rounded-lg shadow-lg bg-gray-700"
+                  />
+                </div>
+              </div>
+            )}
+            {testImageDimensions && (
+              <div className="text-center">
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">Test Image ({testImageDimensions.width}x{testImageDimensions.height})</h3>
+                <div className="relative inline-block align-top">
+                  <canvas 
+                    ref={testCanvasRef} 
+                    className="max-w-full h-auto rounded-lg shadow-lg bg-gray-700"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Grid Check Results */}
+      {activeTab === 'grid-check' && gridResult && (
+        <div className="w-full max-w-6xl mx-auto mt-8">
+          <div className="bg-gray-800 rounded-lg shadow-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-300 mb-4 text-center">Grid Check Results</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {gridResult.boxes.map((box, index) => (
+                <div key={index} className="bg-gray-700 rounded-lg p-4">
+                  <div className="text-center mb-3">
+                    <h4 className="text-sm font-medium text-gray-300 mb-2">Box ({box.row}, {box.col})</h4>
+                    <div className="flex justify-center gap-2 mb-2">
+                      <div 
+                        className="w-8 h-8 rounded border-2 border-gray-600"
+                        style={{ backgroundColor: `rgb(${box.referenceColor.r}, ${box.referenceColor.g}, ${box.referenceColor.b})` }}
+                        title="Reference Color"
+                      />
+                      <div 
+                        className="w-8 h-8 rounded border-2 border-gray-600"
+                        style={{ backgroundColor: `rgb(${box.testColor.r}, ${box.testColor.g}, ${box.testColor.b})` }}
+                        title="Test Color"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400">Percentage Difference</p>
+                      <p className="text-lg font-bold text-indigo-400">
+                        {box.percentageDifference.toFixed(2)}%
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400">RGB Distance</p>
+                      <p className="text-lg font-bold text-green-400">
+                        {box.range255Difference}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 p-3 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+              <p className="text-xs text-blue-300">
+                <strong>Grid Analysis:</strong> Each box shows the mean color comparison between reference and test images. 
+                Use the RGB Distance values to set appropriate thresholds for your capture algorithm.
+              </p>
             </div>
           </div>
         </div>
