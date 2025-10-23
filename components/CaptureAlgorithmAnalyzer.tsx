@@ -1243,6 +1243,12 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
                 <p className="text-xs text-gray-500 mt-1">
                   RGB Distance: 0 = exact match, 255 = completely different
                 </p>
+                <div className="mt-3 p-3 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+                  <p className="text-xs text-blue-300">
+                    <strong>Threshold Note:</strong> For a capture to pass, set your threshold higher than the RGB distance value shown above. 
+                    For example, if the RGB distance is 45, set your threshold to 50 or higher to allow this comparison to pass.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
