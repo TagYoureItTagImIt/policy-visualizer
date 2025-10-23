@@ -20,44 +20,52 @@ interface CropBox {
 }
 
 const VideoCropTool: React.FC = () => {
+  const [mode, setMode] = useState<'video' | 'image'>('video');
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const [targetDimensions, setTargetDimensions] = useState<TargetDimensions>({ width: 1080, height: 2340 });
   const [cropBox, setCropBox] = useState<CropBox | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
+  const [processedImageUrl, setProcessedImageUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [isCustom, setIsCustom] = useState<boolean>(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const outputVideoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     return () => {
       if (videoUrl) URL.revokeObjectURL(videoUrl);
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
       if (processedVideoUrl) URL.revokeObjectURL(processedVideoUrl);
+      if (processedImageUrl) URL.revokeObjectURL(processedImageUrl);
     };
-  }, [videoUrl, processedVideoUrl]);
+  }, [videoUrl, imageUrl, processedVideoUrl, processedImageUrl]);
 
   useEffect(() => {
-    if (videoRef.current && canvasRef.current) {
+    if (canvasRef.current && ((mode === 'video' && videoRef.current) || (mode === 'image' && imageRef.current))) {
       drawCropOverlay();
     }
-  }, [cropBox, videoDimensions]);
+  }, [cropBox, videoDimensions, imageDimensions, mode]);
 
-  // Initialize crop box when video dimensions are loaded
+  // Initialize crop box when dimensions are loaded
   useEffect(() => {
-    if (videoDimensions && !cropBox) {
-      const newCropBox = calculateCropBox(videoDimensions, targetDimensions);
+    const dimensions = mode === 'video' ? videoDimensions : imageDimensions;
+    if (dimensions && !cropBox) {
+      const newCropBox = calculateCropBox(dimensions, targetDimensions);
       setCropBox(newCropBox);
     }
-  }, [videoDimensions, targetDimensions, cropBox]);
+  }, [videoDimensions, imageDimensions, targetDimensions, cropBox, mode]);
 
   useEffect(() => {
-    if (videoRef.current) {
+    if (mode === 'video' && videoRef.current) {
       const video = videoRef.current;
       const handleTimeUpdate = () => {
         if (canvasRef.current) {
@@ -67,7 +75,7 @@ const VideoCropTool: React.FC = () => {
       video.addEventListener('timeupdate', handleTimeUpdate);
       return () => video.removeEventListener('timeupdate', handleTimeUpdate);
     }
-  }, [cropBox, videoDimensions]);
+  }, [cropBox, videoDimensions, mode]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -77,23 +85,47 @@ const VideoCropTool: React.FC = () => {
         if (prev) URL.revokeObjectURL(prev);
         return null;
       });
+      setProcessedImageUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       setCropBox(null);
       
       const objectUrl = URL.createObjectURL(file);
-      setVideoUrl(objectUrl);
 
-      if (file.type.startsWith('video/')) {
-        const video = document.createElement('video');
-        video.preload = 'metadata';
+      if (mode === 'video') {
+        setVideoUrl(objectUrl);
+        setImageUrl(null);
+        setImageDimensions(null);
         
-        video.onloadedmetadata = () => {
-          setVideoDimensions({ width: video.videoWidth, height: video.videoHeight });
-        };
-        video.src = objectUrl;
-        video.load();
+        if (file.type.startsWith('video/')) {
+          const video = document.createElement('video');
+          video.preload = 'metadata';
+          
+          video.onloadedmetadata = () => {
+            setVideoDimensions({ width: video.videoWidth, height: video.videoHeight });
+          };
+          video.src = objectUrl;
+          video.load();
+        } else {
+          setError("Please select a video file.");
+          URL.revokeObjectURL(objectUrl);
+        }
       } else {
-        setError("Please select a video file.");
-        URL.revokeObjectURL(objectUrl);
+        setImageUrl(objectUrl);
+        setVideoUrl(null);
+        setVideoDimensions(null);
+        
+        if (file.type.startsWith('image/')) {
+          const img = document.createElement('img');
+          img.onload = () => {
+            setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+          };
+          img.src = objectUrl;
+        } else {
+          setError("Please select an image file.");
+          URL.revokeObjectURL(objectUrl);
+        }
       }
     }
   };
@@ -102,8 +134,9 @@ const VideoCropTool: React.FC = () => {
     setTargetDimensions(prev => {
       const newDimensions = { ...prev, [field]: value };
       // Recalculate crop box with new dimensions
-      if (videoDimensions && cropBox) {
-        const newCropBox = calculateCropBox(videoDimensions, newDimensions);
+      const dimensions = mode === 'video' ? videoDimensions : imageDimensions;
+      if (dimensions && cropBox) {
+        const newCropBox = calculateCropBox(dimensions, newDimensions);
         setCropBox(newCropBox);
       }
       return newDimensions;
@@ -137,8 +170,9 @@ const VideoCropTool: React.FC = () => {
   const handlePresetSelect = (width: number, height: number) => {
     setTargetDimensions({ width, height });
     setIsCustom(false);
-    if (videoDimensions) {
-      const newCropBox = calculateCropBox(videoDimensions, { width, height });
+    const dimensions = mode === 'video' ? videoDimensions : imageDimensions;
+    if (dimensions) {
+      const newCropBox = calculateCropBox(dimensions, { width, height });
       setCropBox(newCropBox);
     }
   };
@@ -154,7 +188,8 @@ const VideoCropTool: React.FC = () => {
   };
 
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!videoDimensions || !cropBox) return;
+    const dimensions = mode === 'video' ? videoDimensions : imageDimensions;
+    if (!dimensions || !cropBox) return;
     
     const canvas = e.currentTarget;
     const rect = canvas.getBoundingClientRect();
@@ -170,7 +205,8 @@ const VideoCropTool: React.FC = () => {
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDragging || !dragStart || !videoDimensions || !cropBox) return;
+    const dimensions = mode === 'video' ? videoDimensions : imageDimensions;
+    if (!isDragging || !dragStart || !dimensions || !cropBox) return;
     
     const canvas = e.currentTarget;
     const rect = canvas.getBoundingClientRect();
@@ -180,9 +216,9 @@ const VideoCropTool: React.FC = () => {
     const newX = x - dragStart.x;
     const newY = y - dragStart.y;
     
-    // Keep crop box within video bounds
-    const constrainedX = Math.max(0, Math.min(newX, videoDimensions.width - cropBox.width));
-    const constrainedY = Math.max(0, Math.min(newY, videoDimensions.height - cropBox.height));
+    // Keep crop box within bounds
+    const constrainedX = Math.max(0, Math.min(newX, dimensions.width - cropBox.width));
+    const constrainedY = Math.max(0, Math.min(newY, dimensions.height - cropBox.height));
     
     setCropBox({
       ...cropBox,
@@ -198,8 +234,7 @@ const VideoCropTool: React.FC = () => {
 
   const drawCropOverlay = useCallback(() => {
     const canvas = canvasRef.current;
-    const video = videoRef.current;
-    if (!canvas || !video || !videoDimensions) return;
+    if (!canvas) return;
     
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -207,23 +242,44 @@ const VideoCropTool: React.FC = () => {
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Draw video frame
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (mode === 'video') {
+      const video = videoRef.current;
+      const dimensions = videoDimensions;
+      if (!video || !dimensions) return;
+      
+      // Draw video frame
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    } else {
+      const image = imageRef.current;
+      const dimensions = imageDimensions;
+      if (!image || !dimensions) return;
+      
+      // Draw image
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    }
     
     if (cropBox) {
       // Draw semi-transparent overlay outside crop area
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       
-      // Clear the crop area to show original video
+      // Clear the crop area to show original content
       ctx.clearRect(cropBox.x, cropBox.y, cropBox.width, cropBox.height);
       
-      // Redraw the video frame in the crop area
-      ctx.drawImage(
-        video,
-        cropBox.x, cropBox.y, cropBox.width, cropBox.height,
-        cropBox.x, cropBox.y, cropBox.width, cropBox.height
-      );
+      // Redraw the content in the crop area
+      if (mode === 'video' && videoRef.current) {
+        ctx.drawImage(
+          videoRef.current,
+          cropBox.x, cropBox.y, cropBox.width, cropBox.height,
+          cropBox.x, cropBox.y, cropBox.width, cropBox.height
+        );
+      } else if (mode === 'image' && imageRef.current) {
+        ctx.drawImage(
+          imageRef.current,
+          cropBox.x, cropBox.y, cropBox.width, cropBox.height,
+          cropBox.x, cropBox.y, cropBox.width, cropBox.height
+        );
+      }
       
       // Draw crop border
       ctx.strokeStyle = '#3b82f6';
@@ -238,7 +294,57 @@ const VideoCropTool: React.FC = () => {
       ctx.fillRect(cropBox.x - handleSize/2, cropBox.y + cropBox.height - handleSize/2, handleSize, handleSize);
       ctx.fillRect(cropBox.x + cropBox.width - handleSize/2, cropBox.y + cropBox.height - handleSize/2, handleSize, handleSize);
     }
-  }, [cropBox, videoDimensions]);
+  }, [cropBox, videoDimensions, imageDimensions, mode]);
+
+  const processImage = useCallback(async () => {
+    if (!imageUrl || !cropBox || !imageDimensions) return;
+    
+    setIsProcessing(true);
+    setError(null);
+    
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = targetDimensions.width;
+      canvas.height = targetDimensions.height;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        throw new Error('Could not create canvas context');
+      }
+      
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageUrl;
+      });
+      
+      // Draw the cropped and scaled image
+      ctx.drawImage(
+        img,
+        cropBox.x, cropBox.y, cropBox.width, cropBox.height,
+        0, 0, targetDimensions.width, targetDimensions.height
+      );
+      
+      // Convert to blob and create URL
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          setProcessedImageUrl(url);
+          setIsProcessing(false);
+        } else {
+          setError('Failed to process image');
+          setIsProcessing(false);
+        }
+      }, 'image/png');
+      
+    } catch (error) {
+      setError('Error processing image: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setIsProcessing(false);
+    }
+  }, [imageUrl, cropBox, imageDimensions, targetDimensions]);
 
   const processVideo = useCallback(async () => {
     if (!videoUrl || !cropBox || !videoDimensions) return;
@@ -318,6 +424,17 @@ const VideoCropTool: React.FC = () => {
     }
   }, [videoUrl, cropBox, videoDimensions, targetDimensions]);
 
+  const downloadImage = () => {
+    if (!processedImageUrl) return;
+    
+    const a = document.createElement('a');
+    a.href = processedImageUrl;
+    a.download = 'cropped-image.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   const downloadVideo = () => {
     if (!processedVideoUrl) return;
     
@@ -331,15 +448,42 @@ const VideoCropTool: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Mode Selector */}
+      <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-2xl mx-auto">
+        <h3 className="text-lg font-medium text-gray-300 mb-4">Crop Tool Mode</h3>
+        <div className="flex gap-4">
+          <button
+            onClick={() => setMode('video')}
+            className={`px-4 py-2 rounded-md transition ${
+              mode === 'video'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+            }`}
+          >
+            Video Crop
+          </button>
+          <button
+            onClick={() => setMode('image')}
+            className={`px-4 py-2 rounded-md transition ${
+              mode === 'image'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+            }`}
+          >
+            Image Crop
+          </button>
+        </div>
+      </div>
+
       {/* File Upload */}
       <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-2xl mx-auto">
-        <label htmlFor="video-upload" className="block text-sm font-medium text-gray-300 mb-2">
-          Upload Video
+        <label htmlFor="file-upload" className="block text-sm font-medium text-gray-300 mb-2">
+          Upload {mode === 'video' ? 'Video' : 'Image'}
         </label>
         <input 
-          id="video-upload"
+          id="file-upload"
           type="file" 
-          accept="video/*" 
+          accept={mode === 'video' ? 'video/*' : 'image/*'} 
           onChange={handleFileChange} 
           className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-500 file:text-white hover:file:bg-indigo-600 transition"
         />
@@ -351,7 +495,7 @@ const VideoCropTool: React.FC = () => {
         </div>
       )}
 
-      {videoUrl && videoDimensions && (
+      {((mode === 'video' && videoUrl && videoDimensions) || (mode === 'image' && imageUrl && imageDimensions)) && (
         <>
           {/* Target Dimensions */}
           <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-2xl mx-auto">
@@ -380,6 +524,16 @@ const VideoCropTool: React.FC = () => {
                   }`}
                 >
                   1080×2340
+                </button>
+                <button
+                  onClick={() => handlePresetSelect(720, 1565)}
+                  className={`px-3 py-1 text-sm rounded transition ${
+                    targetDimensions.width === 720 && targetDimensions.height === 1565 && !isCustom
+                      ? 'bg-green-600 text-white' 
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  720×1565
                 </button>
                 <button
                   onClick={handleCustomToggle}
@@ -428,26 +582,44 @@ const VideoCropTool: React.FC = () => {
             </div>
           </div>
 
-          {/* Video Display and Crop Selection */}
+          {/* Media Display and Crop Selection */}
           <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-4xl mx-auto">
             <h3 className="text-lg font-medium text-gray-300 mb-4">Select Crop Area</h3>
             <div className="relative inline-block">
-              <video
-                ref={videoRef}
-                src={videoUrl}
-                className="max-w-full h-auto"
-                style={{ maxHeight: '400px' }}
-                controls
-                onLoadedMetadata={() => {
-                  if (videoRef.current && canvasRef.current) {
-                    const video = videoRef.current;
-                    const canvas = canvasRef.current;
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    drawCropOverlay();
-                  }
-                }}
-              />
+              {mode === 'video' ? (
+                <video
+                  ref={videoRef}
+                  src={videoUrl}
+                  className="max-w-full h-auto"
+                  style={{ maxHeight: '400px' }}
+                  controls
+                  onLoadedMetadata={() => {
+                    if (videoRef.current && canvasRef.current) {
+                      const video = videoRef.current;
+                      const canvas = canvasRef.current;
+                      canvas.width = video.videoWidth;
+                      canvas.height = video.videoHeight;
+                      drawCropOverlay();
+                    }
+                  }}
+                />
+              ) : (
+                <img
+                  ref={imageRef}
+                  src={imageUrl}
+                  className="max-w-full h-auto"
+                  style={{ maxHeight: '400px' }}
+                  onLoad={() => {
+                    if (imageRef.current && canvasRef.current) {
+                      const img = imageRef.current;
+                      const canvas = canvasRef.current;
+                      canvas.width = img.naturalWidth;
+                      canvas.height = img.naturalHeight;
+                      drawCropOverlay();
+                    }
+                  }}
+                />
+              )}
               <canvas
                 ref={canvasRef}
                 className="absolute top-0 left-0 cursor-crosshair"
@@ -474,16 +646,16 @@ const VideoCropTool: React.FC = () => {
           {/* Process Button */}
           <div className="text-center">
             <button
-              onClick={processVideo}
+              onClick={mode === 'video' ? processVideo : processImage}
               disabled={!cropBox || isProcessing}
               className="px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-300 ease-in-out"
             >
-              {isProcessing ? 'Processing...' : 'Process Video'}
+              {isProcessing ? 'Processing...' : `Process ${mode === 'video' ? 'Video' : 'Image'}`}
             </button>
           </div>
 
           {/* Output Video */}
-          {processedVideoUrl && (
+          {processedVideoUrl && mode === 'video' && (
             <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-4xl mx-auto">
               <h3 className="text-lg font-medium text-gray-300 mb-4">Processed Video</h3>
               <video
@@ -499,6 +671,27 @@ const VideoCropTool: React.FC = () => {
                   className="px-6 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition-all duration-300 ease-in-out"
                 >
                   Download Video
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Output Image */}
+          {processedImageUrl && mode === 'image' && (
+            <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-4xl mx-auto">
+              <h3 className="text-lg font-medium text-gray-300 mb-4">Processed Image</h3>
+              <img
+                src={processedImageUrl}
+                className="max-w-full h-auto mb-4"
+                style={{ maxHeight: '400px' }}
+                alt="Processed image"
+              />
+              <div className="text-center">
+                <button
+                  onClick={downloadImage}
+                  className="px-6 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition-all duration-300 ease-in-out"
+                >
+                  Download Image
                 </button>
               </div>
             </div>
