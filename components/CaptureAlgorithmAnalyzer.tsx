@@ -61,6 +61,13 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
   } | null>(null);
   const [isCalculatingGrid, setIsCalculatingGrid] = useState<boolean>(false);
 
+  // Grid Check area selection state
+  const [gridUseSameArea, setGridUseSameArea] = useState<boolean>(true);
+  const [gridReferenceArea, setGridReferenceArea] = useState<{ x: number, y: number, width: number, height: number }>({ x: 0, y: 0, width: 0, height: 0 });
+  const [gridTestArea, setGridTestArea] = useState<{ x: number, y: number, width: number, height: number }>({ x: 0, y: 0, width: 0, height: 0 });
+  const [isDrawingGridReference, setIsDrawingGridReference] = useState<boolean>(false);
+  const [isDrawingGridTest, setIsDrawingGridTest] = useState<boolean>(false);
+
   const originalCanvasRef = useRef<HTMLCanvasElement>(null);
   const processedCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -302,6 +309,53 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
     }
   }, [testArea, currentRect, testImageDimensions, isDrawingTest]);
 
+  // Grid Check drawing overlays
+  useEffect(() => {
+    const canvas = referenceDrawingCanvasRef.current;
+    if (!canvas || !referenceImageDimensions) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (gridReferenceArea.width > 0 && gridReferenceArea.height > 0) {
+      ctx.fillStyle = 'rgba(236, 72, 153, 0.4)'; // semi-transparent pink
+      ctx.strokeStyle = '#EC4899'; // pink-500
+      ctx.lineWidth = 2;
+      ctx.fillRect(gridReferenceArea.x, gridReferenceArea.y, gridReferenceArea.width, gridReferenceArea.height);
+      ctx.strokeRect(gridReferenceArea.x, gridReferenceArea.y, gridReferenceArea.width, gridReferenceArea.height);
+    }
+
+    if (currentRect && isDrawingGridReference) {
+      ctx.strokeStyle = '#F472B6'; // pink-400
+      ctx.lineWidth = 2;
+      ctx.strokeRect(currentRect.x, currentRect.y, currentRect.width, currentRect.height);
+    }
+  }, [gridReferenceArea, currentRect, referenceImageDimensions, isDrawingGridReference]);
+
+  useEffect(() => {
+    const canvas = testDrawingCanvasRef.current;
+    if (!canvas || !testImageDimensions) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (gridTestArea.width > 0 && gridTestArea.height > 0) {
+      ctx.fillStyle = 'rgba(236, 72, 153, 0.4)'; // semi-transparent pink
+      ctx.strokeStyle = '#EC4899'; // pink-500
+      ctx.lineWidth = 2;
+      ctx.fillRect(gridTestArea.x, gridTestArea.y, gridTestArea.width, gridTestArea.height);
+      ctx.strokeRect(gridTestArea.x, gridTestArea.y, gridTestArea.width, gridTestArea.height);
+    }
+
+    if (currentRect && isDrawingGridTest) {
+      ctx.strokeStyle = '#F472B6'; // pink-400
+      ctx.lineWidth = 2;
+      ctx.strokeRect(currentRect.x, currentRect.y, currentRect.width, currentRect.height);
+    }
+  }, [gridTestArea, currentRect, testImageDimensions, isDrawingGridTest]);
+
   // Sync areas when "Use Same Area" is toggled
   useEffect(() => {
     if (useSameArea) {
@@ -309,6 +363,14 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
       setTestArea(referenceArea);
     }
   }, [useSameArea, referenceArea]);
+
+  // Sync grid areas when "Use Same Area" is toggled
+  useEffect(() => {
+    if (gridUseSameArea) {
+      // When enabling same area, use reference area for both
+      setGridTestArea(gridReferenceArea);
+    }
+  }, [gridUseSameArea, gridReferenceArea]);
   
   const handleAnalyze = useCallback(() => {
     if (!originalCanvasRef.current || !processedCanvasRef.current || !imageDimensions) return;
@@ -580,7 +642,7 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
     return { percentage, range255 };
   };
 
-  const calculateGridMeanColors = (canvas: HTMLCanvasElement, imageDimensions: { width: number, height: number }, gridW: number, gridH: number): Array<{
+  const calculateGridMeanColors = (canvas: HTMLCanvasElement, imageDimensions: { width: number, height: number }, gridW: number, gridH: number, selectedArea: { x: number, y: number, width: number, height: number }): Array<{
     row: number;
     col: number;
     referenceColor: { r: number; g: number; b: number };
@@ -589,13 +651,13 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
     range255Difference: number;
   }> => {
     const results = [];
-    const boxWidth = imageDimensions.width / gridW;
-    const boxHeight = imageDimensions.height / gridH;
+    const boxWidth = selectedArea.width / gridW;
+    const boxHeight = selectedArea.height / gridH;
     
     for (let row = 0; row < gridH; row++) {
       for (let col = 0; col < gridW; col++) {
-        const x = col * boxWidth;
-        const y = row * boxHeight;
+        const x = selectedArea.x + (col * boxWidth);
+        const y = selectedArea.y + (row * boxHeight);
         const area = { x, y, width: boxWidth, height: boxHeight };
         
         const referenceColor = calculateMeanColor(canvas, area, imageDimensions);
@@ -624,12 +686,24 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
     setError(null);
 
     try {
+      // Use full image if no area is selected, otherwise use selected area
+      const referenceArea = gridReferenceArea.width > 0 && gridReferenceArea.height > 0 
+        ? gridReferenceArea 
+        : { x: 0, y: 0, width: referenceImageDimensions!.width, height: referenceImageDimensions!.height };
+      
+      const testArea = gridUseSameArea 
+        ? referenceArea 
+        : (gridTestArea.width > 0 && gridTestArea.height > 0 
+          ? gridTestArea 
+          : { x: 0, y: 0, width: testImageDimensions!.width, height: testImageDimensions!.height });
+
       // Calculate reference grid colors
       const referenceResults = calculateGridMeanColors(
         referenceCanvasRef.current, 
         referenceImageDimensions!, 
         gridWidth, 
-        gridHeight
+        gridHeight,
+        referenceArea
       );
 
       // Calculate test grid colors
@@ -637,7 +711,8 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
         testCanvasRef.current, 
         testImageDimensions!, 
         gridWidth, 
-        gridHeight
+        gridHeight,
+        testArea
       );
 
       // Compare each grid box
@@ -806,6 +881,87 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
     setStartPoint(null);
     setCurrentRect(null);
     setIsDrawingTest(false);
+  };
+
+  // Grid Check mouse event handlers
+  const handleGridReferenceMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawingGridReference) return;
+    const coords = getReferenceCanvasCoordinates(e);
+    if (coords) {
+      setIsDrawing(true);
+      setStartPoint(coords);
+      setIsDrawingGridTest(false);
+    }
+  };
+
+  const handleGridTestMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawingGridTest) return;
+    const coords = getTestCanvasCoordinates(e);
+    if (coords) {
+      setIsDrawing(true);
+      setStartPoint(coords);
+      setIsDrawingGridReference(false);
+    }
+  };
+
+  const handleGridReferenceMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawing || !startPoint || !isDrawingGridReference) return;
+    const coords = getReferenceCanvasCoordinates(e);
+    if (coords) {
+      const x = Math.min(startPoint.x, coords.x);
+      const y = Math.min(startPoint.y, coords.y);
+      const width = Math.abs(startPoint.x - coords.x);
+      const height = Math.abs(startPoint.y - coords.y);
+      setCurrentRect({ x, y, width, height });
+    }
+  };
+
+  const handleGridTestMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawing || !startPoint || !isDrawingGridTest) return;
+    const coords = getTestCanvasCoordinates(e);
+    if (coords) {
+      const x = Math.min(startPoint.x, coords.x);
+      const y = Math.min(startPoint.y, coords.y);
+      const width = Math.abs(startPoint.x - coords.x);
+      const height = Math.abs(startPoint.y - coords.y);
+      setCurrentRect({ x, y, width, height });
+    }
+  };
+
+  const handleGridReferenceMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawing || !startPoint || !isDrawingGridReference) return;
+    const coords = getReferenceCanvasCoordinates(e);
+    if (coords) {
+      const x = Math.min(startPoint.x, coords.x);
+      const y = Math.min(startPoint.y, coords.y);
+      const width = Math.abs(startPoint.x - coords.x);
+      const height = Math.abs(startPoint.y - coords.y);
+      const newArea = { x, y, width, height };
+      const validatedArea = referenceImageDimensions ? validateArea(newArea, referenceImageDimensions) : newArea;
+      setGridReferenceArea(validatedArea);
+      if (gridUseSameArea) setGridTestArea(validatedArea);
+    }
+    setIsDrawing(false);
+    setStartPoint(null);
+    setCurrentRect(null);
+  };
+
+  const handleGridTestMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawing || !startPoint || !isDrawingGridTest) return;
+    const coords = getTestCanvasCoordinates(e);
+    if (coords) {
+      const x = Math.min(startPoint.x, coords.x);
+      const y = Math.min(startPoint.y, coords.y);
+      const width = Math.abs(startPoint.x - coords.x);
+      const height = Math.abs(startPoint.y - coords.y);
+      const newArea = { x, y, width, height };
+      const validatedArea = testImageDimensions ? validateArea(newArea, testImageDimensions) : newArea;
+      setGridTestArea(validatedArea);
+      if (gridUseSameArea) setGridReferenceArea(validatedArea);
+    }
+    setIsDrawing(false);
+    setStartPoint(null);
+    setCurrentRect(null);
   };
 
   return (
@@ -1431,6 +1587,180 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
             </div>
           </div>
 
+          {/* Grid Check Area Selection */}
+          <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-4xl mx-auto mb-6">
+            <h3 className="text-lg font-medium text-gray-300 mb-4">Analysis Area (Optional)</h3>
+            
+            <div className="mb-4">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={gridUseSameArea}
+                  onChange={(e) => {
+                    setGridUseSameArea(e.target.checked);
+                    if (e.target.checked) {
+                      setGridTestArea(gridReferenceArea);
+                    }
+                  }}
+                  className="mr-2"
+                />
+                <span className="text-sm text-gray-300">Use Same Area for Both Images</span>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-3">Reference Image Area (Optional)</label>
+                <div className="grid grid-cols-1 sm:grid-cols-6 gap-3 items-end">
+                  <div>
+                    <label htmlFor="grid-ref-x" className="block text-xs font-medium text-gray-400 mb-1">X</label>
+                    <input id="grid-ref-x" type="number" value={gridReferenceArea.x} onChange={(e) => {
+                      const newValue = parseInt(e.target.value) || 0;
+                      const newArea = {...gridReferenceArea, x: newValue};
+                      const validatedArea = referenceImageDimensions ? validateArea(newArea, referenceImageDimensions) : newArea;
+                      setGridReferenceArea(validatedArea);
+                      if (gridUseSameArea) setGridTestArea(validatedArea);
+                    }} className="bg-gray-700 text-white rounded-md p-2 text-sm w-full" />
+                  </div>
+                  <div>
+                    <label htmlFor="grid-ref-y" className="block text-xs font-medium text-gray-400 mb-1">Y</label>
+                    <input id="grid-ref-y" type="number" value={gridReferenceArea.y} onChange={(e) => {
+                      const newValue = parseInt(e.target.value) || 0;
+                      const newArea = {...gridReferenceArea, y: newValue};
+                      const validatedArea = referenceImageDimensions ? validateArea(newArea, referenceImageDimensions) : newArea;
+                      setGridReferenceArea(validatedArea);
+                      if (gridUseSameArea) setGridTestArea(validatedArea);
+                    }} className="bg-gray-700 text-white rounded-md p-2 text-sm w-full" />
+                  </div>
+                  <div>
+                    <label htmlFor="grid-ref-width" className="block text-xs font-medium text-gray-400 mb-1">Width</label>
+                    <input id="grid-ref-width" type="number" value={gridReferenceArea.width} onChange={(e) => {
+                      const newValue = parseInt(e.target.value) || 0;
+                      const newArea = {...gridReferenceArea, width: newValue};
+                      const validatedArea = referenceImageDimensions ? validateArea(newArea, referenceImageDimensions) : newArea;
+                      setGridReferenceArea(validatedArea);
+                      if (gridUseSameArea) setGridTestArea(validatedArea);
+                    }} className="bg-gray-700 text-white rounded-md p-2 text-sm w-full" />
+                  </div>
+                  <div>
+                    <label htmlFor="grid-ref-height" className="block text-xs font-medium text-gray-400 mb-1">Height</label>
+                    <input id="grid-ref-height" type="number" value={gridReferenceArea.height} onChange={(e) => {
+                      const newValue = parseInt(e.target.value) || 0;
+                      const newArea = {...gridReferenceArea, height: newValue};
+                      const validatedArea = referenceImageDimensions ? validateArea(newArea, referenceImageDimensions) : newArea;
+                      setGridReferenceArea(validatedArea);
+                      if (gridUseSameArea) setGridTestArea(validatedArea);
+                    }} className="bg-gray-700 text-white rounded-md p-2 text-sm w-full" />
+                  </div>
+                  <button 
+                    onClick={() => {
+                      if (isDrawingGridReference) {
+                        setIsDrawingGridReference(false);
+                        setIsDrawing(false);
+                        setStartPoint(null);
+                        setCurrentRect(null);
+                      } else {
+                        setGridReferenceArea({ x: 0, y: 0, width: 0, height: 0 });
+                        if (gridUseSameArea) {
+                          setGridTestArea({ x: 0, y: 0, width: 0, height: 0 });
+                        }
+                        setIsDrawingGridReference(true);
+                        setIsDrawingGridTest(false);
+                      }
+                    }} 
+                    disabled={!referenceImageUrl}
+                    className={`rounded-md p-2 text-sm flex justify-center items-center transition ${
+                      isDrawingGridReference
+                        ? 'bg-green-600 hover:bg-green-700 text-white' 
+                        : 'bg-pink-600 hover:bg-pink-700 text-white disabled:bg-gray-600'
+                    }`}
+                  >
+                    {isDrawingGridReference ? 'Drawing...' : 'Draw'}
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (referenceImageDimensions) {
+                        const fullArea = { x: 0, y: 0, width: referenceImageDimensions.width, height: referenceImageDimensions.height };
+                        setGridReferenceArea(fullArea);
+                        if (gridUseSameArea) {
+                          setGridTestArea(fullArea);
+                        }
+                      }
+                    }} 
+                    disabled={!referenceImageUrl}
+                    className="bg-gray-600 hover:bg-gray-500 text-white rounded-md p-2 text-sm flex justify-center items-center transition disabled:bg-gray-700"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+
+              {!gridUseSameArea && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-3">Test Image Area (Optional)</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-6 gap-3 items-end">
+                    <div>
+                      <label htmlFor="grid-test-x" className="block text-xs font-medium text-gray-400 mb-1">X</label>
+                      <input id="grid-test-x" type="number" value={gridTestArea.x} onChange={(e) => setGridTestArea(p => ({...p, x: parseInt(e.target.value) || 0}))} className="bg-gray-700 text-white rounded-md p-2 text-sm w-full" />
+                    </div>
+                    <div>
+                      <label htmlFor="grid-test-y" className="block text-xs font-medium text-gray-400 mb-1">Y</label>
+                      <input id="grid-test-y" type="number" value={gridTestArea.y} onChange={(e) => setGridTestArea(p => ({...p, y: parseInt(e.target.value) || 0}))} className="bg-gray-700 text-white rounded-md p-2 text-sm w-full" />
+                    </div>
+                    <div>
+                      <label htmlFor="grid-test-width" className="block text-xs font-medium text-gray-400 mb-1">Width</label>
+                      <input id="grid-test-width" type="number" value={gridTestArea.width} onChange={(e) => setGridTestArea(p => ({...p, width: parseInt(e.target.value) || 0}))} className="bg-gray-700 text-white rounded-md p-2 text-sm w-full" />
+                    </div>
+                    <div>
+                      <label htmlFor="grid-test-height" className="block text-xs font-medium text-gray-400 mb-1">Height</label>
+                      <input id="grid-test-height" type="number" value={gridTestArea.height} onChange={(e) => setGridTestArea(p => ({...p, height: parseInt(e.target.value) || 0}))} className="bg-gray-700 text-white rounded-md p-2 text-sm w-full" />
+                    </div>
+                    <button 
+                      onClick={() => {
+                        if (isDrawingGridTest) {
+                          setIsDrawingGridTest(false);
+                          setIsDrawing(false);
+                          setStartPoint(null);
+                          setCurrentRect(null);
+                        } else {
+                          setGridTestArea({ x: 0, y: 0, width: 0, height: 0 });
+                          if (gridUseSameArea) {
+                            setGridReferenceArea({ x: 0, y: 0, width: 0, height: 0 });
+                          }
+                          setIsDrawingGridTest(true);
+                          setIsDrawingGridReference(false);
+                        }
+                      }} 
+                      disabled={!testImageUrl}
+                      className={`rounded-md p-2 text-sm flex justify-center items-center transition ${
+                        isDrawingGridTest
+                          ? 'bg-green-600 hover:bg-green-700 text-white' 
+                          : 'bg-pink-600 hover:bg-pink-700 text-white disabled:bg-gray-600'
+                      }`}
+                    >
+                      {isDrawingGridTest ? 'Drawing...' : 'Draw'}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        if (testImageDimensions) {
+                          const fullArea = { x: 0, y: 0, width: testImageDimensions.width, height: testImageDimensions.height };
+                          setGridTestArea(fullArea);
+                          if (gridUseSameArea) {
+                            setGridReferenceArea(fullArea);
+                          }
+                        }
+                      }} 
+                      disabled={!testImageUrl}
+                      className="bg-gray-600 hover:bg-gray-500 text-white rounded-md p-2 text-sm flex justify-center items-center transition disabled:bg-gray-700"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Calculate Button */}
           {referenceImageDimensions && testImageDimensions && (
             <div className="text-center mb-6">
@@ -1466,6 +1796,14 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
                     ref={referenceCanvasRef} 
                     className="max-w-full h-auto rounded-lg shadow-lg bg-gray-700"
                   />
+                  <canvas
+                    ref={referenceDrawingCanvasRef}
+                    className={`absolute top-0 left-0 max-w-full h-auto ${isDrawingGridReference ? 'cursor-crosshair z-20' : 'pointer-events-none z-10'}`}
+                    onMouseDown={handleGridReferenceMouseDown}
+                    onMouseMove={handleGridReferenceMouseMove}
+                    onMouseUp={handleGridReferenceMouseUp}
+                    onMouseLeave={handleGridReferenceMouseUp}
+                  />
                 </div>
               </div>
             )}
@@ -1476,6 +1814,14 @@ const CaptureAlgorithmAnalyzer: React.FC = () => {
                   <canvas 
                     ref={testCanvasRef} 
                     className="max-w-full h-auto rounded-lg shadow-lg bg-gray-700"
+                  />
+                  <canvas
+                    ref={testDrawingCanvasRef}
+                    className={`absolute top-0 left-0 max-w-full h-auto ${isDrawingGridTest ? 'cursor-crosshair z-20' : 'pointer-events-none z-10'}`}
+                    onMouseDown={handleGridTestMouseDown}
+                    onMouseMove={handleGridTestMouseMove}
+                    onMouseUp={handleGridTestMouseUp}
+                    onMouseLeave={handleGridTestMouseUp}
                   />
                 </div>
               </div>
